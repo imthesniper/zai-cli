@@ -85,8 +85,21 @@ test('unknown runtime interactions continue to fail closed and deduplicate notic
 });
 test('model catalog retains disabled status and only offers advertised reasoning levels', () => {
   const options = nativeModelCatalog(snapshot([{ ...base, reasoning: { defaultLevel: 'fabricated', levels: [{ value: 'high', label: 'High' }, { value: 'low', label: 'Low' }] }, disabledReason: '' }]));
-  assert.deepEqual(options.map(x => x.value), ['fixture/model$high', 'fixture/model$low']);
+  assert.deepEqual(options.map(x => x.value), ['fixture/model', 'fixture/model$high', 'fixture/model$low']);
   assert.ok(options.every(x => x.disabled));
+});
+test('default reasoning reference is offered alongside exact registry-advertised levels', () => {
+  const options = nativeModelCatalog(snapshot([
+    { ref: { providerId: 'account:zai-individual-coding-plan', modelId: 'GLM-5.3' },
+      label: 'GLM-5.3', reasoning: { defaultLevel: 'high', levels: [
+        { value: 'high', label: 'High' }, { value: 'low', label: 'Low' }] } },
+  ]));
+  assert.deepEqual(options.map(x => x.value), [
+    'account:zai-individual-coding-plan/GLM-5.3',
+    'account:zai-individual-coding-plan/GLM-5.3$high',
+    'account:zai-individual-coding-plan/GLM-5.3$low',
+  ]);
+  assert.ok(options.every(x => !x.disabled));
 });
 test('conflicting duplicate model entries cannot enable an unavailable model', () => {
   const options = nativeModelCatalog(snapshot([{ ...base, disabledReason: 'not entitled' }, base]));
