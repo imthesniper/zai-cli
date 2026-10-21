@@ -51,6 +51,12 @@
 - Live cancellation evidence now requires a started root turn and shell tool, acknowledged stop request, observed abort, and two successive idle protocol snapshots. Added `--cancellation-only` for an isolated follow-up without repeating previously verified editing and resume tests.
 - Automatic token-expiry renewal, remote token revocation, and individual file-tool approval behavior remain unverified.
 
+### Live cancellation verification, October 21
+
+- A second isolated Docker run confirmed that an actual Bash tool started, an in-flight `session/stop` was acknowledged, an abort was observed and two consecutive runtime snapshots were idle.
+- The operator's fixed-schema result was `PASS live_cancellation: ACTIVE_TOOL_ABORTED_STOP_ACKNOWLEDGED_IDLE_CONFIRMED`, with a successful fresh OAuth login and guarded session.
+- The earlier inconclusive result is preserved as historical evidence, not silently rewritten. Ordinary tool-specific permission prompts were not observed in either test; real token-expiry renewal remains outstanding.
+
 ## 0.1.2 - 2026-10-19
 
 Added an opt-in `zc stream` backend for the observed working headless account path

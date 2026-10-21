@@ -44,7 +44,7 @@ To validate actual automatic renewal, a separate controlled integration test wou
 
 The repository now includes `test/native-refresh-lifecycle.test.mjs` with a deliberately **fake, short-lived token issuer** and protocol server. It tests ZC's observable behavior when the issuer transparently renews or rejects a token: no prompt replay, no fallback billing and no credential leakage into emitted events. This is an isolated simulation. It does **not** execute the pinned upstream client's actual token refresh resolver and does not demonstrate a live token expiring.
 
-The [production acceptance guide](PRODUCTION-GATES.md) also includes a new opt-in live test in a non-root disposable Docker container, intended for the operator to run with fresh Z.ai authorization. It checks a unique file read, exact file editing with unaffected sentinels, denial of the explicit YOLO/full-access escalation, cold session recovery with a conversation marker, and attempted cancellation. The runner refuses host execution and mounts no host directories. **These live coding results are pending until an operator supplies their output.**
+The [production acceptance guide](PRODUCTION-GATES.md) also includes a new opt-in live test in a non-root disposable Docker container, intended for the operator to run with fresh Z.ai authorization. It checks a unique file read, exact file editing with unaffected sentinels, denial of the explicit YOLO/full-access escalation, cold session recovery with a conversation marker, and attempted cancellation. The runner refuses host execution and mounts no host directories. **These live coding results have since been supplied by the operator and are documented below.**
 
 The simulated expiry fixture, the Docker source and cross-platform CI are verification of test infrastructure, not a substitute for observed full editing/permission or real expiry-based renewal. Keep the release marked **integration preview** until the [remaining gates](#remaining-gates-for-a-stable-production-claim) are independently satisfied.
 
@@ -57,22 +57,35 @@ environment: login, guarded-mode confirmation, a real canary file read,
 an exact file edit with unchanged sentinel files, explicit **denial of YOLO
 escalation**, and cold session resume with preserved conversation context.
 
-Cancellation was explicitly `INCONCLUSIVE`, not PASS: the old acceptance code
-checked the removed `runtime.mainActive` field and did not prove a long shell
-tool was running before requesting stop. The operator observed zero file-tool
-approvals. Ordinary tool approval/denial is therefore not independently
-validated by that pass, and a refused shell approval must never be treated as
-successful cancellation.
+The initial cancellation check was `INCONCLUSIVE`: it used the retired
+`runtime.mainActive` field and did not verify that a long-running shell tool
+was active before requesting stop. [PR #16](https://github.com/imthesniper/zai-cli/pull/16)
+changed ZC's status interpretation and the acceptance script to require
+a started shell tool, an acknowledged stop RPC, an observed abort and two
+consecutive authoritative idle protocol snapshots.
 
-[Production acceptance gates](PRODUCTION-GATES.md) now provides an optional
-cancellation-only live rerun with current-protocol activity checks. The
-regression suite is separate from user-supplied live results. These observations
-do not show actual token expiry, remote OAuth revocation, multi-hour endurance
-or cross-platform full-screen terminal behavior.
+The operator subsequently supplied the following result from the
+`--cancellation-only` run on the same Linux VPS, in a fresh disposable
+container:
+
+```text
+PASS oauth_login: COMPLETED
+PASS guarded_session: MODE_CONFIRMED
+PASS live_cancellation: ACTIVE_TOOL_ABORTED_STOP_ACKNOWLEDGED_IDLE_CONFIRMED
+INFO permission_prompts: NO_RUNTIME_TOOL_PROMPTS_OBSERVED
+```
+
+**Live in-flight cancellation is now verified under these test conditions.**
+This does not certify every form of cancellation, process-tree termination
+under all failure modes or unattended resilience. The test did not observe
+an individual tool-specific permission prompt, so the **ordinary tool
+approval/denial workflow remains unverified**. No actual token expiry,
+remote OAuth revocation, multi-hour endurance or cross-platform full-screen
+terminal compatibility has been established.
 
 ## Remaining gates for a stable production claim
 
-- **Outstanding:** live cancellation with the shell actually started, a confirmed stop acknowledgment, and stable idle state. Exact file read/edit, YOLO-denial and cold resume already passed in a disposable non-root Linux Docker test; ordinary individual tool-approval dialogs were not independently exercised.
+- **Verified on the tested Linux VPS:** live file read/edit with unchanged sentinels, denied YOLO escalation, cold resume with retained context and cancellation of an observed long-running shell task with acknowledged stop and stable idle state. **Still outstanding:** independent exercise of interactive tool-specific approval and denial prompts (zero such prompts observed in the cancellation rerun).
 - Token renewal and multi-hour operation under real network interruptions.
 - Interactive Windows terminal and mouse/clipboard behavior across supported emulators.
 - A third-party security review and OS-level isolation, neither of which this CLI supplies.
