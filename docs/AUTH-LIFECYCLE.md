@@ -87,3 +87,16 @@ The native UI now keeps the bare `providerId/modelId` reference when upstream al
 For an exact `--model` explicitly provided by the operator, ZC may ask the upstream app-server to validate that selection even if the frontend's projected picker omits it. This does not select a substitute model. It requires a matching `session/setModel` confirmation from the runtime **before** any model request. A runtime-advertised disabled model remains forbidden, and ordinary picker selection still requires catalog membership. A runtime rejection stops the test; it is not retried with a different backend or billed API.
 
 These changes address two ZC-side selection guards, but they are **not** evidence that the live Z.ai app-server will advertise or acknowledge the model after standalone login. A new isolated live test is required before removing the production-readiness caveat.
+
+## Distinguishing a native model-selection failure
+
+The isolated live run confirmed `modelAdvertised=true` but failed at `phase=model_select category=OTHER`. The prior diagnostic did not distinguish the exact upstream `session/setModel` request from its result projection. The current test now reports:
+
+- `selectedAtStart`: whether the runtime snapshot already showed the exact model before ZC attempted a change
+- `setModelRpcSent`: whether a session/model mutation was requested
+- `setModelRpcAcknowledged`: whether the runtime replied successfully
+- `setModelRpcRejected`: whether it rejected that request
+
+ZC now skips a redundant `session/setModel` mutation **only when an authoritative `session/read` confirms the exact requested model**. It still rejects disabled models and requires an exact runtime-confirmed model before sending a prompt.
+
+If the RPC rejects, the remaining error is in runtime validation or integration; no account credential is automatically replaced. If the RPC accepts but model selection still fails, investigate model projection/confirmation handling. These flags are local, fixed-schema diagnostics and do not include raw protocol frames.
