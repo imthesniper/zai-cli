@@ -27,7 +27,7 @@ export function failureKind(error) {
   return 'OTHER';
 }
 
-export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutMs = 60000 }) {
+export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutMs = 60000, catalogOnly = false }) {
   if (!['ask', 'read-only'].includes(mode)) throw new Error('Invalid native test mode');
   const summary = { phase: 'startup', category: 'UNFINISHED', modelAdvertised: false, selected: false,
     initialModelSupplied: false, initialModelConfirmed: false,
@@ -78,6 +78,12 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
     summary.phase = 'model_catalog';
     const catalog = await backend.models();
     summary.modelAdvertised = catalog.some(option => option.value === model && !option.disabled);
+    if (catalogOnly) {
+      // A signed-out model visibility check must never send inference, change
+      // the provider configuration, or mutate the selected model.
+      summary.category = 'CATALOG_CHECK';
+      return summary;
+    }
     summary.phase = 'model_select';
     await backend.setModel(model, { allowUnlistedExact: true });
     summary.selected = matchesNativeModelSelection(backend.model, model);
@@ -101,14 +107,18 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
 }
 
 async function main() {
-  const [model, workspace, mode = 'ask'] = process.argv.slice(2);
-  if (!model || !workspace) throw new Error('Missing native phase probe options');
+  const [model, workspace, mode = 'ask', operation] = process.argv.slice(2);
+  if (!model || !workspace || (operation !== undefined && operation !== 'catalog-only')) {
+    throw new Error('Missing or unsupported native phase probe options');
+  }
   if (!/^[A-Za-z0-9:_-]+\/[A-Za-z0-9._-]+$/.test(model)) throw new Error('Invalid model ID');
   const cwd = await realpath(workspace);
-  const summary = await runProbe({ cwd, model, mode, makeBackend: options => new NativeBackend(options) });
+  const catalogOnly = operation === 'catalog-only';
+  const summary = await runProbe({ cwd, model, mode, catalogOnly,
+    makeBackend: options => new NativeBackend(options) });
   // This one JSON record is the *only* intended diagnostic output.
   console.log(JSON.stringify(summary));
-  if (!summary.responseVerified) process.exitCode = 1;
+  if (summary.category !== 'CATALOG_CHECK' && !summary.responseVerified) process.exitCode = 1;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch(() => { console.log(JSON.stringify({phase:'setup',category:'OTHER',responseVerified:false}));process.exitCode = 1; });
