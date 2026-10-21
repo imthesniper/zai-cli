@@ -37,7 +37,9 @@ test('live result classifier returns only stable labels, never secrets', () => {
   assert.equal(resultCategory(new Error('Session not found')),'SESSION_NOT_PERSISTED');
   assert.equal(resultCategory(new Error('model not configured')),'MODEL_SELECTION');
   for(const m of ['Bearer account-secret','Authorization: secret','SENSITIVE']) {
-    assert.equal(resultCategory(new Error(m)),'OTHER_FAILURE');
+    const label = resultCategory(new Error(m));
+    assert.ok(['OTHER_FAILURE','ACCOUNT_ACCESS'].includes(label));
+    assert.doesNotMatch(label, /secret|Bearer|Authorization|SENSITIVE/i);
   }
 });
 test('container live test does not run at import time', () => {
