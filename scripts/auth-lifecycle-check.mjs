@@ -64,6 +64,26 @@ export function classify(text, timedOut) {
   return 'UNCLASSIFIED_EXIT';
 }
 
+export function formatNativePhase(phase) {
+  // The phase probe emits this fixed schema; never copy raw model names,
+  // credential values or upstream error strings into a report.
+  if (!phase || typeof phase.phase !== 'string' || typeof phase.category !== 'string' ||
+      !/^[a-z_]{1,32}$/.test(phase.phase) || !/^[A-Z_]{1,48}$/.test(phase.category)) {
+    return 'phase=unknown category=INVALID_DIAGNOSTIC';
+  }
+  const bit = value => value === true ? 'true' : 'false';
+  return [
+    'phase=' + phase.phase, 'category=' + phase.category,
+    'modelAdvertised=' + bit(phase.modelAdvertised),
+    'selectedAtStart=' + bit(phase.selectedAtStart),
+    'setModelRpcSent=' + bit(phase.setModelRpcSent),
+    'setModelRpcAcknowledged=' + bit(phase.setModelRpcAcknowledged),
+    'setModelRpcRejected=' + bit(phase.setModelRpcRejected),
+    'providerHeaderRequests=' + (Number.isSafeInteger(phase.providerHeaderRequests) &&
+      phase.providerHeaderRequests >= 0 && phase.providerHeaderRequests <= 100 ? phase.providerHeaderRequests : 'unknown'),
+  ].join(' ');
+}
+
 function execute(script, args, env, cwd, interactive = false, timeoutMs = 180000) {
   return new Promise((resolveRun, reject) => {
     const child = spawn(process.execPath, [script, ...args], {
@@ -108,9 +128,7 @@ async function main() {
       } catch { /* Return the fixed diagnostic category, never raw output. */ }
       const good = result.code === 0 && phase?.responseVerified === true;
       return { code: good ? 0 : 1, output: good ? marker : '', timedOut: result.timedOut,
-        diagnostic: phase ? 'phase=' + phase.phase + ' category=' + phase.category +
-          ' modelAdvertised=' + Boolean(phase.modelAdvertised) +
-          ' providerHeaderRequests=' + (Number.isSafeInteger(phase.providerHeaderRequests) ? phase.providerHeaderRequests : 'unknown')
+        diagnostic: phase ? formatNativePhase(phase)
           : 'phase=unknown category=' + classify(result.output, result.timedOut) };
     }
     return execute(zc, ['exec',
