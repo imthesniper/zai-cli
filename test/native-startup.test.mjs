@@ -55,6 +55,16 @@ test('runtime rejection of an explicitly requested unlisted model never sends an
   await assert.rejects(f.native.setModel('fixture/nonexistent', { allowUnlistedExact: true }), /Fixture rejected/);
   assert.equal((await f.native.rpc.request('fixture/stats')).sent, 0);
 });
+test('reselecting an already acknowledged model makes no new upstream mutation', async t => {
+  const f = make(t); await f.native.start();
+  await f.native.setModel('fixture/model-b');
+  assert.equal((await f.native.rpc.request('fixture/stats')).selected, 1);
+  await f.native.setModel('fixture/model-b');
+  assert.equal((await f.native.rpc.request('fixture/stats')).selected, 1);
+  await f.native.setModel('fixture/model-b', { allowUnlistedExact: true });
+  assert.equal((await f.native.rpc.request('fixture/stats')).selected, 1);
+  assert.equal(formatNativeModel(f.native.model), 'fixture/model-b');
+});
 test('unknown and unavailable models are rejected before selection RPC', async t => {
   const f = make(t); await f.native.start();
   await assert.rejects(f.native.setModel('made-up/provider'), /not in the runtime catalog/);
