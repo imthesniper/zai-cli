@@ -30,6 +30,7 @@ export function failureKind(error) {
 export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutMs = 60000 }) {
   if (!['ask', 'read-only'].includes(mode)) throw new Error('Invalid native test mode');
   const summary = { phase: 'startup', category: 'UNFINISHED', modelAdvertised: false, selected: false,
+    selectedAtStart: false, setModelRpcSent: false, setModelRpcAcknowledged: false, setModelRpcRejected: false,
     providerHeaderRequests: 0, toolRequests: 0, responseVerified: false };
   const answerParts = [];
   let backend;
@@ -53,6 +54,23 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
     summary.phase = 'session_start';
     await backend.start();
     if (timeout.aborted) throw new Error('Native test timeout');
+    summary.selectedAtStart = backend.model !== undefined && formatNativeModel(backend.model) === model;
+    // Observe RPC success/failure without reading or logging payloads, response
+    // bodies, provider configuration, or encrypted credential stores.
+    if (backend.rpc && typeof backend.rpc.request === 'function') {
+      const originalRequest = backend.rpc.request.bind(backend.rpc);
+      backend.rpc.request = async (method, params, options) => {
+        if (method === 'session/setModel') summary.setModelRpcSent = true;
+        try {
+          const result = await originalRequest(method, params, options);
+          if (method === 'session/setModel') summary.setModelRpcAcknowledged = true;
+          return result;
+        } catch (error) {
+          if (method === 'session/setModel') summary.setModelRpcRejected = true;
+          throw error;
+        }
+      };
+    }
     summary.phase = 'model_catalog';
     const catalog = await backend.models();
     summary.modelAdvertised = catalog.some(option => option.value === model && !option.disabled);
