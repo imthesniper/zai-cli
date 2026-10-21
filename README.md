@@ -105,7 +105,7 @@ For an **explicit account-backed model on a new session**, you can initialize it
 zc --model 'account:zai-individual-coding-plan/GLM-5.3'
 ```
 
-This requires an account entitled to that exact model. ZC creates the session, reads the runtime's advertised model and default reasoning level, and submits a **fully structured selection** through `session/setModel`. It accepts the selection only after the runtime acknowledges the exact model and reasoning level; it never guesses an effort, silently chooses another provider, or retries a rejected request. A model without a valid advertised default requires you to select an explicit reasoning level via `/model`. Live account-backed native inference remains under validation; see [authentication lifecycle testing](docs/AUTH-LIFECYCLE.md).
+This requires an account entitled to that exact model. ZC creates the session, reads the runtime's advertised model and default reasoning level, and submits a **fully structured selection** through `session/setModel`. It accepts the selection only after the runtime acknowledges the exact model and reasoning level; it never guesses an effort, silently chooses another provider, or retries a rejected request. A model without a valid advertised default requires you to select an explicit reasoning level via `/model`. Initial and repeated account-backed native inference were verified on the operator's Linux VPS; editing, full workflow recovery, and real token-expiry renewal remain separate gates. See [authentication lifecycle testing](docs/AUTH-LIFECYCLE.md).
 
 On your first upgrade from an older preview, `zc resume` may open the session picker. Choose the existing conversation. Old prompts are not automatically resubmitted.
 
@@ -114,6 +114,16 @@ On your first upgrade from an older preview, `zc resume` may open the session pi
 To run an **optional, live authentication lifecycle test** without logging out your normal ZCode profile, see [authentication lifecycle testing](docs/AUTH-LIFECYCLE.md). It generates authorization links in your own terminal and uses an isolated test profile. The test makes actual model requests and consumes quota.
 
 This checks initial login, a second authenticated request, local logout and denial, then re-login. It does **not** certify automatic renewal after token expiration. Never send OAuth authorization links, callback codes, or credential files into an issue or chat.
+
+## Test production-readiness workflows
+
+The live account login/logout/re-login lifecycle has passed on a Linux VPS. To validate **actual file editing, denied full-access consent, cancellation and cold session recovery**, use the opt-in disposable Docker runner documented in [production acceptance gates](docs/PRODUCTION-GATES.md).
+
+```bash
+bash scripts/live-production/run.sh
+```
+
+This test requires Docker and a fresh Z.ai login *inside* an isolated, non-root container with no host files mounted. It never runs agent-editing prompts directly against your VPS home. The automated suite also tests simulated token expiry/reissue using a **fake local issuer**. That simulation does not certify the official runtime's real token renewal after expiry.
 
 ## Permission modes and autonomous work
 

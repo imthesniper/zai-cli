@@ -51,6 +51,25 @@ jobs:
           name: zc-${{ matrix.os }}-node${{ matrix.node }}
           path: striking-lions-zc-0.2.0.tgz
           if-no-files-found: error
+  isolated_live_image:
+    name: Disposable live runner image (no login)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build non-root live test image with pinned Node
+        run: docker build --pull -f scripts/live-production/Dockerfile -t zc-live-production-smoke:ci .
+      - name: Verify live test image syntax in non-root read-only container
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt=no-new-privileges --user 10001:10001 \
+            --entrypoint node zc-live-production-smoke:ci \
+            --check scripts/live-production-check.mjs
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt=no-new-privileges --user 10001:10001 \
+            --entrypoint node zc-live-production-smoke:ci --version
   dependencies:
     name: Dependency audit
     runs-on: ubuntu-latest

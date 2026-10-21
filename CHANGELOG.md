@@ -36,6 +36,13 @@
 - These results span two runs, including a test-harness update; they are not a single continuous CI or production-load test. [Release readiness](docs/RELEASE-READINESS.md) records the exact boundary.
 - **Not yet verified:** actual token-expiry renewal, remote OAuth revocation, multi-hour stability, and live write/deny/cancel/resume behavior.
 
+### Production gate harness, October 21 (candidate)
+
+- Add a deterministic fake-token issuer whose simulated short TTL crosses a native model-request boundary, and verify successful refresh plus explicit failure without prompt replay. This does not exercise actual Z.ai token renewal.
+- Add an opt-in **non-root, no-host-mount Docker runner** for live model-backed file read/edit, denial of full-access consent, cancellation and cold resume in a disposable workspace.
+- Keep source-level/CI checks separate from live results, and publish exact PASS, FAIL or INCONCLUSIVE classifications in [production acceptance gates](docs/PRODUCTION-GATES.md).
+- Real upstream token-expiry renewal and live container evidence remain pending.
+
 ## 0.1.2 - 2026-10-19
 
 Added an opt-in `zc stream` backend for the observed working headless account path

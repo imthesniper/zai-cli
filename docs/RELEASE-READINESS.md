@@ -40,6 +40,14 @@ The pinned upstream public client `zcode-app-cli@3.15.3-37` includes [shared OAu
 
 To validate actual automatic renewal, a separate controlled integration test would need to simulate expiry and verify successful reissuance through the real managed runtime without logging or altering personal credentials. Live proof would additionally require observing an authentic expiry/refresh transition, not merely waiting an arbitrary duration between successful requests. Until then, expiry-driven renewal remains unverified.
 
+## New reproducible production acceptance tests (candidate)
+
+The repository now includes `test/native-refresh-lifecycle.test.mjs` with a deliberately **fake, short-lived token issuer** and protocol server. It tests ZC's observable behavior when the issuer transparently renews or rejects a token: no prompt replay, no fallback billing and no credential leakage into emitted events. This is an isolated simulation. It does **not** execute the pinned upstream client's actual token refresh resolver and does not demonstrate a live token expiring.
+
+The [production acceptance guide](PRODUCTION-GATES.md) also includes a new opt-in live test in a non-root disposable Docker container, intended for the operator to run with fresh Z.ai authorization. It checks a unique file read, exact file editing with unaffected sentinels, denial of the explicit YOLO/full-access escalation, cold session recovery with a conversation marker, and attempted cancellation. The runner refuses host execution and mounts no host directories. **These live coding results are pending until an operator supplies their output.**
+
+The simulated expiry fixture, the Docker source and cross-platform CI are verification of test infrastructure, not a substitute for observed full editing/permission or real expiry-based renewal. Keep the release marked **integration preview** until the [remaining gates](#remaining-gates-for-a-stable-production-claim) are independently satisfied.
+
 ## Remaining gates for a stable production claim
 
 - Live account-backed edit/test/deny/cancel/resume behavior through this exact packaged version.
