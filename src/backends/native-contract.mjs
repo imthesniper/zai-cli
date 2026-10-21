@@ -81,23 +81,40 @@ export function nativeModelCatalog(snapshot) {
     const label = clean(option.label).replace(/\n/g, ' ').slice(0, 160);
     const provider = clean(option.providerLabel || option.ref.providerId).replace(/\n/g, ' ').slice(0, 160);
     const reason = disabled ? clean(option.disabledReason).replace(/\n/g, ' ').slice(0, 300) || 'Unavailable in this runtime.' : undefined;
-    const add = (selection, suffix = '') => {
-      const value = formatNativeModel(selection);
-      const candidate = { value, selection, label: `${label}${suffix}`, description: `${provider}${disabled ? ' | Unavailable: ' + reason : ''}`, disabled, ...(reason ? { disabledReason: reason } : {}) };
+    const add = (selection, suffix = '', displayValue, defaultUnavailable) => {
+      const value = displayValue || formatNativeModel(selection);
+      const blocked = disabled || Boolean(defaultUnavailable);
+      const blockedReason = reason || defaultUnavailable;
+      const candidate = { value, selection, label: `${label}${suffix}`,
+        description: `${provider}${blocked ? ' | Unavailable: ' + blockedReason : ''}`,
+        disabled: blocked, ...(blockedReason ? { disabledReason: blockedReason } : {}) };
       const previous = entries.get(value);
-      // Conflicting availability is not a reason to enable an option.
-      if (!previous || disabled) entries.set(value, candidate);
+      // An unavailable or conflicting option cannot be made available by a duplicate.
+      if (!previous || blocked) entries.set(value, candidate);
     };
     if (!option.reasoning || option.ref.options?.reasoningLevel) { add(parseNativeModel(base)); continue; }
     const levels = option.reasoning.levels;
     if (!Array.isArray(levels) || levels.length > 32) throw new Error('Invalid native reasoning options.');
-    // The upstream model registry permits an omitted reasoningLevel and fills
-    // its default. It is a valid exact reference, not a guessed reasoning level.
-    // Preserve that bare provider/model choice alongside advertised levels.
-    add(parseNativeModel(base), levels.length ? ' (Default reasoning)' : '');
     for (const level of levels) {
-      if (!isRecord(level) || typeof level.value !== 'string' || typeof level.label !== 'string') throw new Error('Invalid native reasoning option.');
-      add({ ...option.ref, options: { reasoningLevel: level.value } }, ` (${clean(level.label).replace(/\n/g, ' ').slice(0, 80)})`);
+      if (!isRecord(level) || typeof level.value !== 'string' || typeof level.label !== 'string' ||
+          !/^[A-Za-z0-9._-]+$/.test(level.value)) throw new Error('Invalid native reasoning option.');
+    }
+    if (!levels.length) add(parseNativeModel(base));
+    else {
+      const defaultLevel = option.reasoning.defaultLevel;
+      const defaultAdvertised = typeof defaultLevel === 'string' && levels.some(level => level.value === defaultLevel);
+      // The picker displays the bare reference, but the structured RPC must
+      // include a concrete effort accepted by the upstream Registry validator.
+      // Only the runtime-advertised default is eligible, never a guessed first.
+      const selection = defaultAdvertised
+        ? { ...parseNativeModel(base), options: { reasoningLevel: defaultLevel } }
+        : parseNativeModel(base);
+      add(selection, ' (Default reasoning)', base,
+        defaultAdvertised ? undefined : 'Runtime did not advertise a valid default reasoning level; choose an explicit level.');
+    }
+    for (const level of levels) {
+      add({ ...parseNativeModel(base), options: { reasoningLevel: level.value } },
+        ` (${clean(level.label).replace(/\n/g, ' ').slice(0, 80)})`);
     }
     if (entries.size > 2048) throw new Error('Native model catalog exceeded its limit.');
   }
