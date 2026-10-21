@@ -63,7 +63,7 @@ test('reselecting an already acknowledged model makes no new upstream mutation',
   assert.equal((await f.native.rpc.request('fixture/stats')).selected, 1);
   await f.native.setModel('fixture/model-b', { allowUnlistedExact: true });
   assert.equal((await f.native.rpc.request('fixture/stats')).selected, 1);
-  assert.equal(formatNativeModel(f.native.model), 'fixture/model-b');
+  assert.equal(formatNativeModel(f.native.model), 'fixture/model-b$high');
 });
 test('unknown and unavailable models are rejected before selection RPC', async t => {
   const f = make(t); await f.native.start();
@@ -110,6 +110,24 @@ test('default reasoning reference is offered alongside exact registry-advertised
     'account:zai-individual-coding-plan/GLM-5.3$low',
   ]);
   assert.ok(options.every(x => !x.disabled));
+  assert.deepEqual(options[0].selection, {
+    providerId: 'account:zai-individual-coding-plan', modelId: 'GLM-5.3',
+    options: { reasoningLevel: 'high' }
+  });
+});
+test('invalid default reasoning cannot silently choose a made-up fallback', () => {
+  const choices = nativeModelCatalog(snapshot([{
+    ref: { providerId: 'account:zai-individual-coding-plan', modelId: 'GLM-5.3' },
+    label: 'GLM-5.3', reasoning: { defaultLevel: 'invented',
+      levels: [{ value: 'high', label: 'High' }, { value: 'low', label: 'Low' }] },
+  }]));
+  const bare = choices.find(x => x.value === 'account:zai-individual-coding-plan/GLM-5.3');
+  assert.equal(bare.disabled, true);
+  assert.match(bare.disabledReason, /valid default reasoning level/);
+  assert.deepEqual(choices.filter(x => !x.disabled).map(x => x.value), [
+    'account:zai-individual-coding-plan/GLM-5.3$high',
+    'account:zai-individual-coding-plan/GLM-5.3$low'
+  ]);
 });
 test('conflicting duplicate model entries cannot enable an unavailable model', () => {
   const options = nativeModelCatalog(snapshot([{ ...base, disabledReason: 'not entitled' }, base]));

@@ -105,7 +105,7 @@ For an **explicit account-backed model on a new session**, you can initialize it
 zc --model 'account:zai-individual-coding-plan/GLM-5.3'
 ```
 
-This requires an account entitled to that exact model. It asks the native runtime to bind the model in `session/create` and verifies the returned session state before allowing a prompt. It does not guess a provider, replace a model after rejection, or change an existing resumed conversation. The interactive `/model` switch uses a separate upstream RPC and may still fail with some runtime revisions. See [authentication lifecycle testing](docs/AUTH-LIFECYCLE.md) for the currently verified boundaries.
+This requires an account entitled to that exact model. ZC creates the session, reads the runtime's advertised model and default reasoning level, and submits a **fully structured selection** through `session/setModel`. It accepts the selection only after the runtime acknowledges the exact model and reasoning level; it never guesses an effort, silently chooses another provider, or retries a rejected request. A model without a valid advertised default requires you to select an explicit reasoning level via `/model`. Live account-backed native inference remains under validation; see [authentication lifecycle testing](docs/AUTH-LIFECYCLE.md).
 
 On your first upgrade from an older preview, `zc resume` may open the session picker. Choose the existing conversation. Old prompts are not automatically resubmitted.
 

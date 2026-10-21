@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { tmpdir } from 'node:os';
+import { mkdtemp, lstat, rm, symlink, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { resolve } from 'node:path';
-import { isolatedEnv, parseOptions, modelDefault, classify, formatNativePhase } from '../scripts/auth-lifecycle-check.mjs';
+import { isolatedEnv, parseOptions, modelDefault, classify, formatNativePhase, prepareReusableProfile } from '../scripts/auth-lifecycle-check.mjs';
 
 test('live authentication test requires a well-formed explicit provider/model and bounded wait', () => {
   assert.equal(parseOptions([]).model, modelDefault);
   assert.equal(parseOptions(['--delay-seconds','60']).delaySeconds, 60);
+  assert.equal(parseOptions(['--keep-on-failure']).keepOnFailure, true);
+  assert.equal(parseOptions([]).keepOnFailure, false);
   for (const args of [['--delay-seconds', '-1'], ['--delay-seconds', '3601'], ['--model','garbage'], ['--unsafe']]) {
     assert.throws(() => parseOptions(args));
   }
@@ -57,4 +61,26 @@ test('auth report shows each native model-selection handshake bit without exposi
   ].join(' '));
   assert.doesNotMatch(details,/private-secret|Sensitive|token|errorMessage/);
   assert.equal(formatNativePhase({phase:'unexpected\nsecret',category:'OTHER'}), 'phase=unknown category=INVALID_DIAGNOSTIC');
+});
+
+test('opt-in reusable OAuth test directory is private, reusable and outside git checkout', async t => {
+  if (process.platform === 'win32') return;
+  const home = await mkdtemp(join(tmpdir(), 'zc-auth-dir-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const profile = await prepareReusableProfile(home);
+  const mode = (await lstat(profile)).mode & 0o777;
+  assert.equal(mode, 0o700);
+  assert.equal(profile, join(home, '.local', 'state', 'zc-auth-lifecycle-profile'));
+  assert.equal(await prepareReusableProfile(home), profile);
+});
+test('reusable auth profile rejects a symlink in place of the profile directory', async t => {
+  if (process.platform === 'win32') return;
+  const home = await mkdtemp(join(tmpdir(), 'zc-auth-symlink-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const state = join(home, '.local', 'state');
+  await mkdir(state, { recursive: true });
+  const other = join(home, 'other');
+  await mkdir(other, { mode: 0o700 });
+  await symlink(other, join(state, 'zc-auth-lifecycle-profile'));
+  await assert.rejects(prepareReusableProfile(home), /must be a user-owned 0700 directory/);
 });

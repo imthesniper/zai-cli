@@ -248,15 +248,18 @@ export class NativeBackend {
     // Ordinary picker selections must still originate from the real catalog.
     if (!candidate && !allowUnlistedExact) throw new Error('That exact model and reasoning level are not in the runtime catalog. Open /model to select an available option.');
     if (candidate?.disabled) throw new Error(`The runtime marked this model unavailable: ${candidate.disabledReason}`);
-    // session/read refreshed the authoritative current selection. Do not ask
-    // the upstream runtime to mutate an already-selected exact model.
-    // This also avoids avoidable setModel errors in account-backed sessions.
-    if (matchesNativeModelSelection(this.model, model)) return;
+    // A bare picker value stands for the precise default reasoning level
+    // advertised by the server, not for a structured request with missing
+    // reasoningLevel. The upstream Registry validates structured selections.
+    const selection = candidate?.selection || model;
+    // session/read refreshed the authoritative current selection. Do not
+    // mutate it if it already matches the fully resolved requested selection.
+    if (matchesNativeModelSelection(this.model, selection)) return;
     if (!candidate) this.noticeOnce('explicit-unlisted-model', 'This explicit model is absent from the current picker catalog. Asking the runtime to validate the exact provider/model; no prompt has been submitted.');
-    const result = await this.rpc.request('session/setModel', { sessionId: this.session.sessionId, model, persistAsWorkspaceLastUsed: false });
+    const result = await this.rpc.request('session/setModel', { sessionId: this.session.sessionId, model: selection, persistAsWorkspaceLastUsed: false });
     const snapshot = result?.protocol ? result : await this.rpc.request('session/read', { sessionId: this.session.sessionId });
     this.applyModelSnapshot(snapshot);
-    if (!matchesNativeModelSelection(this.model, model)) throw new Error('The runtime did not confirm that exact model selection. Open /model to inspect its current state.');
+    if (!matchesNativeModelSelection(this.model, selection)) throw new Error('The runtime did not confirm that exact model selection. Open /model to inspect its current state.');
   }
   confirmMode(snapshot, expected) {
     this.validateSnapshot(snapshot);
