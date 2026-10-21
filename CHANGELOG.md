@@ -43,6 +43,14 @@
 - Keep source-level/CI checks separate from live results, and publish exact PASS, FAIL or INCONCLUSIVE classifications in [production acceptance gates](docs/PRODUCTION-GATES.md).
 - Real upstream token-expiry renewal and live container evidence remain pending.
 
+### Live Docker validation and cancellation-state repair, 2026-10-21
+
+- Operator-observed non-root Docker run passed Z.ai authentication, guarded native mode, exact file read/edit with unchanged sentinels, explicit full-access denial and cold session resume with retained context.
+- Cancellation remained **inconclusive** because the original check read the removed `runtime.mainActive` field and did not require evidence the shell tool had started.
+- Native session inspection now derives activity from upstream `runtime.activeTurnId` and `projection.status`, conservatively treating unknown snapshots as unconfirmed.
+- Live cancellation evidence now requires a started root turn and shell tool, acknowledged stop request, observed abort, and two successive idle protocol snapshots. Added `--cancellation-only` for an isolated follow-up without repeating previously verified editing and resume tests.
+- Automatic token-expiry renewal, remote token revocation, and individual file-tool approval behavior remain unverified.
+
 ## 0.1.2 - 2026-10-19
 
 Added an opt-in `zc stream` backend for the observed working headless account path
