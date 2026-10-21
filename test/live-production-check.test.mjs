@@ -13,7 +13,11 @@ test('live production test options are explicit and bounded', () => {
     ['--continuity-minutes','NaN'], ['--model','x'], ['--unsafe'], ['--mode','yolo'],
   ]) assert.throws(() => parseLiveOptions(args));
 });
-test('live file-approval policy only matches a single intended path and operation', () => {
+test('live file-approval policy only matches a single intended path and operation', t => {
+  if (process.platform === 'win32') {
+    t.skip('Live editing is Linux Docker-only; Windows cannot supply POSIX container paths.');
+    return;
+  }
   const workspace = resolve('/tmp', 'zc-workspace-fixture');
   const edit = join(workspace, 'draft.txt');
   const req = (title, payload) => ({ title, input: JSON.stringify(payload) });
