@@ -9,7 +9,6 @@ import { executableExists, spawnProcess } from './process.mjs';
 import { TerminalApp, createBackend, trustWorkspace } from './ui/app.mjs';
 import { probeStreamRuntime } from './backends/native-stream.mjs';
 import { streamModel } from './backends/stream-contract.mjs';
-import { parseNativeModel } from './backends/native-contract.mjs';
 import { WorkspaceState } from './state.mjs';
 import { resolveRuntime, runtimeEnvironment, supportsRuntimeNode, RUNTIME_VERSION } from './runtime.mjs';
 
@@ -146,10 +145,8 @@ async function plain({ config, cwd, demo, trust, prompt, resume, exec, json, mod
   try {
     if (!demo) await trustWorkspace({ cwd, config, trust, ask, signal: controller.signal });
     backend = createBackend({ cwd, config, emit, ask, demo });
-    const startupModel = model && config.backend === 'native' && !resume &&
-      !parseNativeModel(model).options?.reasoningLevel ? model : undefined;
-    await backend.start(resume, startupModel ? { initialModel: startupModel } : undefined);
-    if (model && config.backend === 'native' && !startupModel) await backend.setModel(model, { allowUnlistedExact: true });
+    await backend.start(resume);
+    if (model && config.backend === 'native') await backend.setModel(model, { allowUnlistedExact: true });
     if (prompt) {
       const before = state.entries.length; await backend.send(prompt, controller.signal);
       if (!json) {
