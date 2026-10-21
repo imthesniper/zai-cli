@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { isolatedEnv, parseOptions, modelDefault, classify } from '../scripts/auth-lifecycle-check.mjs';
+import { isolatedEnv, parseOptions, modelDefault, classify, formatNativePhase } from '../scripts/auth-lifecycle-check.mjs';
 
 test('live authentication test requires a well-formed explicit provider/model and bounded wait', () => {
   assert.equal(parseOptions([]).model, modelDefault);
@@ -39,4 +39,20 @@ test('safe failure categories distinguish missing model, bridge and project-toke
   assert.equal(classify('project_token_login_failed', true), 'TIMEOUT_OR_EXCESS_OUTPUT');
   // Do not return untrusted message text, account tokens, or provider headers.
   assert.doesNotMatch(classify('Authorization: Bearer secret-live-value', false), /secret-live-value/);
+});
+
+test('auth report shows each native model-selection handshake bit without exposing raw data', () => {
+  const details = formatNativePhase({
+    phase:'model_select',category:'OTHER',modelAdvertised:true,
+    selectedAtStart:false,setModelRpcSent:true,setModelRpcAcknowledged:false,
+    setModelRpcRejected:true,providerHeaderRequests:0,
+    token:'Bearer private-secret',errorMessage:'Sensitive account response'
+  });
+  assert.equal(details, [
+    'phase=model_select','category=OTHER','modelAdvertised=true',
+    'selectedAtStart=false','setModelRpcSent=true','setModelRpcAcknowledged=false',
+    'setModelRpcRejected=true','providerHeaderRequests=0'
+  ].join(' '));
+  assert.doesNotMatch(details,/private-secret|Sensitive|token|errorMessage/);
+  assert.equal(formatNativePhase({phase:'unexpected\nsecret',category:'OTHER'}), 'phase=unknown category=INVALID_DIAGNOSTIC');
 });
