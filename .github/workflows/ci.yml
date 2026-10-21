@@ -1,0 +1,86 @@
+name: Quality
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['24.14.0', '24.x']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Syntax and regression tests
+        run: npm run check
+      - name: Real POSIX terminal exercise
+        run: python3 scripts/terminal-smoke.py
+        if: runner.os != 'Windows'
+      - name: Execute the actual runtime public version command
+        run: node scripts/verify-runtime.mjs
+      - name: Actual runtime session lifecycle without inference
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '24.x'
+        run: node scripts/runtime-session-check.mjs
+      - run: npm pack
+      - run: npm install --global --ignore-scripts ./striking-lions-zc-0.2.0.tgz
+      - run: zc --version
+      - run: zc demo --plain
+      - name: Real managed installer in an isolated home
+        if: matrix.node == '24.x'
+        run: node scripts/managed-install-check.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zc-${{ matrix.os }}-node${{ matrix.node }}
+          path: striking-lions-zc-0.2.0.tgz
+          if-no-files-found: error
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.x'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm audit --omit=dev --audit-level=high
+  distribution:
+    name: Installation bundle
+    needs: [verify, dependencies]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.x'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm pack
+      - run: python3 scripts/package-release.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zc-installation-bundle
+          path: dist/*
+          if-no-files-found: error

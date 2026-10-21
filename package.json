@@ -1,0 +1,56 @@
+{
+  "name": "@striking-lions/zc",
+  "version": "0.2.0",
+  "description": "A focused terminal coding workspace for Z.ai and the ZCode runtime.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Striking Lions",
+  "engines": {
+    "node": ">=24.14.0"
+  },
+  "bin": {
+    "zc": "bin/zc.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "scripts/build.mjs",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "SECURITY.md",
+    "install",
+    "scripts/verify-runtime.mjs",
+    "scripts/restore-config.mjs"
+  ],
+  "scripts": {
+    "start": "node bin/zc.mjs",
+    "demo": "node bin/zc.mjs demo",
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/test.mjs",
+    "check": "npm run build && npm test",
+    "pack:check": "npm pack --dry-run",
+    "publish:github": "node scripts/publish.mjs",
+    "prepack": "node scripts/build.mjs",
+    "test:terminal": "python3 scripts/terminal-smoke.py"
+  },
+  "keywords": [
+    "zai",
+    "zcode",
+    "cli",
+    "terminal",
+    "coding-agent"
+  ],
+  "dependencies": {
+    "zcode-app-cli": "3.15.3-37"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imthesniper/zai-cli.git"
+  },
+  "homepage": "https://github.com/imthesniper/zai-cli#readme",
+  "bugs": {
+    "url": "https://github.com/imthesniper/zai-cli/issues"
+  }
+}
