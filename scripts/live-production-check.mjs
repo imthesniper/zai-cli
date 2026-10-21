@@ -22,17 +22,19 @@ const marker = () => randomBytes(10).toString('hex');
 const wait = ms => new Promise(resolveWait => setTimeout(resolveWait, ms));
 
 export function parseLiveOptions(argv) {
-  let model = 'account:zai-individual-coding-plan/GLM-5.3', continuityMinutes = 0;
+  let model = 'account:zai-individual-coding-plan/GLM-5.3', continuityMinutes = 0, cancellationOnly = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--model' && argv[i + 1]) model = argv[++i];
     else if (argv[i] === '--continuity-minutes' && argv[i + 1]) continuityMinutes = Number(argv[++i]);
-    else throw new Error('Usage: live-production-check.mjs [--model provider/model] [--continuity-minutes 0..120]');
+    else if (argv[i] === '--cancellation-only') cancellationOnly = true;
+    else throw new Error('Usage: live-production-check.mjs [--model provider/model] [--continuity-minutes 0..120] [--cancellation-only]');
   }
   if (!/^[A-Za-z0-9:_-]+\/[A-Za-z0-9._-]+$/.test(model)) throw new Error('Invalid exact model reference');
   if (!Number.isInteger(continuityMinutes) || continuityMinutes < 0 || continuityMinutes > 120) {
     throw new Error('continuity-minutes must be an integer from 0 to 120');
   }
-  return { model, continuityMinutes };
+  if (cancellationOnly && continuityMinutes) throw new Error('Use either --cancellation-only or --continuity-minutes, not both.');
+  return { model, continuityMinutes, cancellationOnly };
 }
 
 export function safePermissionTarget(request, workspace, allowPaths = []) {
@@ -61,6 +63,44 @@ export function resultCategory(error) {
   return 'OTHER_FAILURE';
 }
 
+/** A single idle read is not proof of a stopped process; require two
+ * consecutive authoritative idle snapshots after the stop is acknowledged. */
+export function nativeCancellationIdle(state) {
+  return Boolean(state &&
+    state.connection === 'open' &&
+    ['idle', 'completed'].includes(state.status) &&
+    state.mainActive === false && state.frontendTurn === false &&
+    state.pendingPermissions === 0 && state.activeToolCalls === 0 &&
+    state.backgroundJobs === 0);
+}
+export async function awaitNativeCancellationIdle(inspect, { maxChecks = 30, intervalMs = 500, pause = wait } = {}) {
+  if (!Number.isSafeInteger(maxChecks) || maxChecks < 2 || maxChecks > 120 ||
+      !Number.isSafeInteger(intervalMs) || intervalMs < 0 || intervalMs > 2000) {
+    throw new Error('Invalid bounded cancellation observation policy');
+  }
+  let consecutive = 0;
+  for (let i = 0; i < maxChecks; i++) {
+    let state;
+    try { state = await inspect(); } catch { consecutive = 0; }
+    if (nativeCancellationIdle(state)) {
+      if (++consecutive >= 2) return true;
+    } else consecutive = 0;
+    if (i + 1 < maxChecks) await pause(intervalMs);
+  }
+  return false;
+}
+export function cancellationVerdict({ turnStarted, toolStarted, stopSent, stopAcknowledged,
+  aborted, idleConfirmed, completed }) {
+  if (completed) return { status: 'INCONCLUSIVE', reason: 'TURN_COMPLETED_BEFORE_STOP' };
+  if (!turnStarted) return { status: 'INCONCLUSIVE', reason: 'TURN_START_NOT_CONFIRMED' };
+  if (!toolStarted) return { status: 'INCONCLUSIVE', reason: 'LONG_RUNNING_TOOL_NOT_OBSERVED' };
+  if (!stopSent) return { status: 'INCONCLUSIVE', reason: 'STOP_NOT_SENT' };
+  if (!stopAcknowledged) return { status: 'INCONCLUSIVE', reason: 'STOP_NOT_ACKNOWLEDGED' };
+  if (!aborted) return { status: 'INCONCLUSIVE', reason: 'ABORT_NOT_CONFIRMED' };
+  if (!idleConfirmed) return { status: 'INCONCLUSIVE', reason: 'RUNTIME_IDLE_NOT_CONFIRMED' };
+  return { status: 'PASS', reason: 'ACTIVE_TOOL_ABORTED_STOP_ACKNOWLEDGED_IDLE_CONFIRMED' };
+}
+
 function officialLogin(env, cwd) {
   return new Promise((done, fail) => {
     const child = spawn(process.execPath, [zc, 'login', '--oauth', '--no-browser'],
@@ -72,7 +112,7 @@ function officialLogin(env, cwd) {
 }
 
 async function main() {
-  const { model, continuityMinutes } = parseLiveOptions(process.argv.slice(2));
+  const { model, continuityMinutes, cancellationOnly } = parseLiveOptions(process.argv.slice(2));
   // Refuse to run live agent editing with mere workspace trust: the native
   // guarded runtime is NOT an OS sandbox.
   if (process.env.ZC_LIVE_CONTAINER !== '1' ||
@@ -147,6 +187,7 @@ async function main() {
     if (app.runtimeMode !== 'guarded') throw new Error('Guarded mode was not confirmed');
     record('guarded_session', 'PASS', 'MODE_CONFIRMED');
 
+    if (!cancellationOnly) {
     phase = 'read';
     const readAnswer = await send(app,
       'Read the exact contents of canary.txt using the file-reading tool. Reply with the file content only. ' +
@@ -206,26 +247,69 @@ async function main() {
       record('account_continuity_after_delay', answer.includes('CONTINUITY_OK') ? 'PASS' : 'FAIL',
         answer.includes('CONTINUITY_OK') ? 'MODEL_CONTINUITY_ONLY_NOT_TOKEN_REFRESH' : 'CONTINUITY_NOT_CONFIRMED');
     }
+    } else {
+      resumeApp = app;
+      app = null;
+      console.log('Cancellation-only run: skip file editing and cold-resume checks already verified in the previous live run.');
+    }
 
     phase = 'cancel';
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
-    let cancelled = false, completed = false;
-    try {
-      await resumeApp.send('In this disposable container only, run the harmless shell command sleep 30. ' +
-        'Do not modify any files and only reply when the wait is finished.', controller.signal);
-      completed = true;
-    } catch (error) {
-      cancelled = error?.name === 'AbortError';
-    } finally { clearTimeout(timer); }
-    const after = await resumeApp.inspect().catch(() => null);
-    if (cancelled && after?.frontendTurn === false && after?.mainActive === false) {
-      record('live_cancellation', 'PASS', 'ABORT_AND_IDLE_CONFIRMED');
-    } else if (completed) {
-      record('live_cancellation', 'INCONCLUSIVE', 'TURN_COMPLETED_BEFORE_STOP');
-    } else {
-      record('live_cancellation', 'INCONCLUSIVE', 'RUNTIME_STOP_NOT_CONFIRMED');
-    }
+    const observation = { turnStarted: false, toolStarted: false,
+      stopSent: false, stopAcknowledged: false };
+    let activeTurnId;
+    const sessionIdForCancel = resumeApp.session.sessionId;
+    // Only metadata from the current root turn is observed. No tool inputs,
+    // prompt text, model output, token values or protocol payloads are logged.
+    resumeApp.rpc.on('notification', (method, item) => {
+      if (phase !== 'cancel' || method !== 'session/event' ||
+          item?.sessionId !== sessionIdForCancel) return;
+      const inputId = resumeApp.active?.inputId;
+      if (item.type === 'turn.started' && inputId &&
+          item.payload?.inputId === inputId) {
+        activeTurnId = item.turnId;
+        observation.turnStarted = true;
+      }
+      if (activeTurnId && item.turnId === activeTurnId &&
+          item.type === 'tool.updated' && item.payload?.kind === 'started' &&
+          /^(Bash|Shell|Exec)$/i.test(String(item.payload?.toolName || ''))) {
+        observation.toolStarted = true;
+      }
+    });
+    const request = resumeApp.rpc.request.bind(resumeApp.rpc);
+    resumeApp.rpc.request = async (method, ...args) => {
+      if (phase === 'cancel' && method === 'session/stop') observation.stopSent = true;
+      const result = await request(method, ...args);
+      if (phase === 'cancel' && method === 'session/stop') observation.stopAcknowledged = true;
+      return result;
+    };
+    let settled = false;
+    const operation = resumeApp.send(
+      'In this disposable container, run exactly the harmless shell command sleep 45 ' +
+      'using the Bash tool. Do not modify files. Reply only after the command ends.',
+      controller.signal).then(() => ({ kind: 'completed' }), error => ({
+        kind: error?.name === 'AbortError' ? 'aborted' : 'failed'
+      }));
+    void operation.then(() => { settled = true; });
+    // Wait for the actual shell tool to start before requesting its stop.
+    // A model that never executes the tool is INCONCLUSIVE, never a pass.
+    const startDeadline = Date.now() + 22000;
+    while (!settled && !observation.toolStarted && Date.now() < startDeadline) await wait(250);
+    if (observation.toolStarted && !settled) await wait(1000);
+    if (!settled) controller.abort();
+    const outcome = await Promise.race([
+      operation,
+      wait(12000).then(() => ({ kind: 'unconfirmed' })),
+    ]);
+    const idleConfirmed = observation.stopAcknowledged ?
+      await awaitNativeCancellationIdle(() => resumeApp.inspect()) : false;
+    const verdict = cancellationVerdict({
+      ...observation,
+      aborted: outcome.kind === 'aborted',
+      completed: outcome.kind === 'completed',
+      idleConfirmed,
+    });
+    record('live_cancellation', verdict.status, verdict.reason);
 
     record('permission_prompts', 'INFO', questionCount > 0 ?
       'PROMPTS_OBSERVED_APPROVED_' + allowCount : 'NO_RUNTIME_TOOL_PROMPTS_OBSERVED');
