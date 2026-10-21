@@ -48,9 +48,31 @@ The [production acceptance guide](PRODUCTION-GATES.md) also includes a new opt-i
 
 The simulated expiry fixture, the Docker source and cross-platform CI are verification of test infrastructure, not a substitute for observed full editing/permission or real expiry-based renewal. Keep the release marked **integration preview** until the [remaining gates](#remaining-gates-for-a-stable-production-claim) are independently satisfied.
 
+## Live Docker coding workflow, October 21, 2026
+
+Following [PR #15](https://github.com/imthesniper/zai-cli/pull/15), the operator
+ran the disposable non-root Docker test on a Linux VPS and returned a sanitized
+`LIVE_PRODUCTION_RESULT` summary. It establishes, for the tested account and
+environment: login, guarded-mode confirmation, a real canary file read,
+an exact file edit with unchanged sentinel files, explicit **denial of YOLO
+escalation**, and cold session resume with preserved conversation context.
+
+Cancellation was explicitly `INCONCLUSIVE`, not PASS: the old acceptance code
+checked the removed `runtime.mainActive` field and did not prove a long shell
+tool was running before requesting stop. The operator observed zero file-tool
+approvals. Ordinary tool approval/denial is therefore not independently
+validated by that pass, and a refused shell approval must never be treated as
+successful cancellation.
+
+[Production acceptance gates](PRODUCTION-GATES.md) now provides an optional
+cancellation-only live rerun with current-protocol activity checks. The
+regression suite is separate from user-supplied live results. These observations
+do not show actual token expiry, remote OAuth revocation, multi-hour endurance
+or cross-platform full-screen terminal behavior.
+
 ## Remaining gates for a stable production claim
 
-- Live account-backed edit/test/deny/cancel/resume behavior through this exact packaged version.
+- **Outstanding:** live cancellation with the shell actually started, a confirmed stop acknowledgment, and stable idle state. Exact file read/edit, YOLO-denial and cold resume already passed in a disposable non-root Linux Docker test; ordinary individual tool-approval dialogs were not independently exercised.
 - Token renewal and multi-hour operation under real network interruptions.
 - Interactive Windows terminal and mouse/clipboard behavior across supported emulators.
 - A third-party security review and OS-level isolation, neither of which this CLI supplies.

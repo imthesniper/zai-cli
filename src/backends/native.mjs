@@ -9,7 +9,7 @@ import { NATIVE_MODES, snapshotPermissionMode, localPermissionMode, fullAccessCo
 
 export const UPSTREAM_COMMIT = 'aac4755666d09fdcd70272fcf063c077a639015f';
 export { parseNativeModel } from './native-contract.mjs';
-import { parseNativeModel, formatNativeModel, snapshotModel, nativeModelCatalog, matchesNativeModelSelection, runtimePreferences, NATIVE_ACCOUNT_AUTH_UNAVAILABLE } from './native-contract.mjs';
+import { parseNativeModel, formatNativeModel, snapshotModel, nativeModelCatalog, matchesNativeModelSelection, nativeActivity, runtimePreferences, NATIVE_ACCOUNT_AUTH_UNAVAILABLE } from './native-contract.mjs';
 export function snapshotMessages(snapshot) {
   const entries = [];
   for (const record of snapshot.messages || []) {
@@ -186,13 +186,19 @@ export class NativeBackend {
     else this.active.finish();
   }
   matchesActive(event) { return this.active?.monitor.matches(event) === true; }
-  async inspect() {
+  async inspect({ timeoutMs = 15000 } = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 15000) {
+      throw new Error('Inspect timeout must be between 1000 and 15000 ms.');
+    }
     if (!this.rpc || this.rpc.closed) throw new Error('Runtime disconnected. Use /reconnect.');
-    const snapshot = await this.rpc.request('session/read', { sessionId: this.session.sessionId }, { timeoutMs: 15000 });
+    const snapshot = await this.rpc.request('session/read', { sessionId: this.session.sessionId }, { timeoutMs });
     this.validateSnapshot(snapshot);
-    return { sessionId: this.session.sessionId, status: snapshot.session.status || snapshot.projection?.status || 'unknown',
-      mainActive: snapshot.runtime?.mainActive, mode: snapshot.settings?.mode?.current || snapshot.session.mode,
-      pendingPermissions: snapshot.projection?.pendingPermissions?.length || 0, backgroundJobs: snapshot.projection?.backgroundJobs?.length || 0,
+    const activity = nativeActivity(snapshot);
+    return { sessionId: this.session.sessionId, status: activity.status,
+      mainActive: activity.mainActive, mode: snapshot.settings?.mode?.current || snapshot.session.mode,
+      pendingPermissions: snapshot.projection?.pendingPermissions?.length || 0,
+      activeToolCalls: snapshot.projection?.activeToolCalls?.length || 0,
+      backgroundJobs: snapshot.projection?.backgroundJobs?.length || 0,
       frontendTurn: Boolean(this.active), connection: this.rpc.closed ? 'closed' : 'open' };
   }
   async send(text, signal) {

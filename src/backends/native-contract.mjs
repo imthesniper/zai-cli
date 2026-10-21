@@ -59,6 +59,32 @@ export function matchesNativeModelSelection(actual, requested) {
       actual.options?.reasoningLevel === expected.options.reasoningLevel);
 }
 
+/** Native activity is derived from the pinned v1 runtime schema.
+ * Upstream removed runtime.mainActive in favor of activeTurnId and projection.
+ * Return undefined if there is not enough evidence to assert an idle turn.
+ */
+export function nativeActivity(snapshot) {
+  if (!isRecord(snapshot)) return { status: 'unknown', mainActive: undefined };
+  const runtime = isRecord(snapshot.runtime) ? snapshot.runtime : {};
+  const projection = isRecord(snapshot.projection) ? snapshot.projection : {};
+  const status = typeof projection.status === 'string' ? projection.status
+    : typeof snapshot.session?.status === 'string' ? snapshot.session.status : 'unknown';
+  const activeTurnId = typeof runtime.activeTurnId === 'string' && runtime.activeTurnId
+    ? runtime.activeTurnId : undefined;
+  const pending = Array.isArray(projection.pendingPermissions) ? projection.pendingPermissions.length : undefined;
+  const activeTools = Array.isArray(projection.activeToolCalls) ? projection.activeToolCalls.length : undefined;
+  if (runtime.mainActive === true || activeTurnId || ['running', 'waiting'].includes(status)) {
+    return { status, mainActive: true };
+  }
+  if (runtime.mainActive === false) return { status, mainActive: false };
+  // The current upstream schema omits activeTurnId when no turn is running.
+  // A valid terminal projection and no in-flight tools/permissions are needed
+  // before declaring the main turn inactive.
+  if (['idle', 'completed', 'paused', 'error'].includes(status) &&
+      pending === 0 && activeTools === 0) return { status, mainActive: false };
+  return { status, mainActive: undefined };
+}
+
 export function snapshotModel(snapshot) {
   const modelState = snapshot.settings?.model;
   const selection = isRecord(modelState) ? modelState.current : snapshot.session?.model;
