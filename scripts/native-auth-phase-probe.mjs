@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { NativeBackend } from '../src/backends/native.mjs';
 import { validateConfig } from '../src/config.mjs';
-import { formatNativeModel } from '../src/backends/native-contract.mjs';
+import { matchesNativeModelSelection } from '../src/backends/native-contract.mjs';
 
 const mark = 'ZC_AUTH_LIFECYCLE_OK';
 const stamp = text => createHash('sha256').update(text).digest('hex').slice(0, 10);
@@ -56,9 +56,8 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
     // The inspected v1 protocol supports model in session/create. In contrast,
     // the failing real run attempted a later session/setModel mutation.
     await backend.start(undefined, { initialModel: model });
-    summary.initialModelConfirmed = Boolean(backend.model &&
-      formatNativeModel(backend.model).split('
-    summary.selectedAtStart = backend.model !== undefined && formatNativeModel(backend.model) === model;
+    summary.initialModelConfirmed = matchesNativeModelSelection(backend.model, model);
+    summary.selectedAtStart = backend.model !== undefined && matchesNativeModelSelection(backend.model, model);
     // Observe RPC success/failure without reading or logging payloads, response
     // bodies, provider configuration, or encrypted credential stores.
     if (backend.rpc && typeof backend.rpc.request === 'function') {
@@ -80,7 +79,7 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
     summary.modelAdvertised = catalog.some(option => option.value === model && !option.disabled);
     summary.phase = 'model_select';
     await backend.setModel(model, { allowUnlistedExact: true });
-    summary.selected = formatNativeModel(backend.model) === model;
+    summary.selected = matchesNativeModelSelection(backend.model, model);
     summary.phase = 'request';
     // No explicit shell or file tooling is requested. Any permission prompt is denied.
     await backend.send('Respond with exactly ' + mark + ' and nothing else. Do not use tools.', timeout);
@@ -115,7 +114,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
 }
 )[0] === model);
     if (timeout.aborted) throw new Error('Native test timeout');
-    summary.selectedAtStart = backend.model !== undefined && formatNativeModel(backend.model) === model;
+    summary.selectedAtStart = backend.model !== undefined && matchesNativeModelSelection(backend.model, model);
     // Observe RPC success/failure without reading or logging payloads, response
     // bodies, provider configuration, or encrypted credential stores.
     if (backend.rpc && typeof backend.rpc.request === 'function') {
@@ -137,7 +136,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     summary.modelAdvertised = catalog.some(option => option.value === model && !option.disabled);
     summary.phase = 'model_select';
     await backend.setModel(model, { allowUnlistedExact: true });
-    summary.selected = formatNativeModel(backend.model) === model;
+    summary.selected = matchesNativeModelSelection(backend.model, model);
     summary.phase = 'request';
     // No explicit shell or file tooling is requested. Any permission prompt is denied.
     await backend.send('Respond with exactly ' + mark + ' and nothing else. Do not use tools.', timeout);
