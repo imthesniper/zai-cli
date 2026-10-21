@@ -9,7 +9,7 @@ import { NATIVE_MODES, snapshotPermissionMode, localPermissionMode, fullAccessCo
 
 export const UPSTREAM_COMMIT = 'aac4755666d09fdcd70272fcf063c077a639015f';
 export { parseNativeModel } from './native-contract.mjs';
-import { parseNativeModel, formatNativeModel, snapshotModel, nativeModelCatalog, runtimePreferences, NATIVE_ACCOUNT_AUTH_UNAVAILABLE } from './native-contract.mjs';
+import { parseNativeModel, formatNativeModel, snapshotModel, nativeModelCatalog, matchesNativeModelSelection, runtimePreferences, NATIVE_ACCOUNT_AUTH_UNAVAILABLE } from './native-contract.mjs';
 export function snapshotMessages(snapshot) {
   const entries = [];
   for (const record of snapshot.messages || []) {
@@ -33,7 +33,13 @@ export class NativeBackend {
     this.modeUnknown = true; this.modeChanging = false;
     this.seq = -1; this.requestCache = new Map(); this.notices = new Set(); this.modelOptions = [];
   }
-  async start(resumeId) {
+  async start(resumeId, { initialModel } = {}) {
+    // The inspected legacy v1 contract accepts an initial selection in
+    // session/create. It is distinct from the later session/setModel mutation.
+    // Do not reuse an initial model when resuming a populated conversation.
+    const selection = initialModel ? parseNativeModel(initialModel) : undefined;
+    if (selection?.options?.reasoningLevel) throw new Error('Native session/create cannot preserve an explicit reasoning level in the pinned protocol. Start without this option and use an acknowledged model selection.');
+    if (resumeId && selection) throw new Error('An initial model cannot replace an existing conversation model during resume.');
     this.needsReconnect = false;
     const runtime = resolveRuntime(this.config.runtime);
     this.child = this.spawnImpl(runtime.command, [...runtime.args, 'app-server', '--stdio'], {
@@ -56,7 +62,8 @@ export class NativeBackend {
     const restrictions = this.launchReadOnly ? { toolAllowlist: ['Read', 'Glob', 'Grep'] } : {};
     let snapshot = await this.rpc.request(resumeId ? 'session/resume' : 'session/create', resumeId
       ? { sessionId: resumeId, workspace: this.workspace, ...restrictions }
-      : { workspace: this.workspace, mode: initialMode, persistence: 'immediate', ...restrictions });
+      : { workspace: this.workspace, mode: initialMode, persistence: 'immediate',
+          ...(selection ? { model: selection } : {}), ...restrictions });
     this.validateSnapshot(snapshot);
     this.session = snapshot.session;
     if (resumeId) {
@@ -71,6 +78,9 @@ export class NativeBackend {
     this.seq = Number.isInteger(subscription.eventSeq) ? subscription.eventSeq : -1;
     this.applyModelSnapshot(snapshot);
     this.confirmMode(snapshot, initialMode);
+    if (selection && !matchesNativeModelSelection(this.model, selection)) {
+      throw new Error('The native runtime did not confirm the exact explicitly requested model during session creation. No inference request was submitted.');
+    }
     this.emit({ type: 'notice', text: 'Connected. /mode controls permissions. Tool access is not confined by an OS sandbox.' });
     if (!this.model) this.emit({ type: 'notice', text: this.modelOptions.length
       ? 'No model is selected. Open /model to choose from the runtime catalog. Nothing has been sent to a model.'
@@ -241,12 +251,12 @@ export class NativeBackend {
     // session/read refreshed the authoritative current selection. Do not ask
     // the upstream runtime to mutate an already-selected exact model.
     // This also avoids avoidable setModel errors in account-backed sessions.
-    if (this.model && formatNativeModel(this.model) === value) return;
+    if (matchesNativeModelSelection(this.model, model)) return;
     if (!candidate) this.noticeOnce('explicit-unlisted-model', 'This explicit model is absent from the current picker catalog. Asking the runtime to validate the exact provider/model; no prompt has been submitted.');
     const result = await this.rpc.request('session/setModel', { sessionId: this.session.sessionId, model, persistAsWorkspaceLastUsed: false });
     const snapshot = result?.protocol ? result : await this.rpc.request('session/read', { sessionId: this.session.sessionId });
     this.applyModelSnapshot(snapshot);
-    if (!this.model || formatNativeModel(this.model) !== value) throw new Error('The runtime did not confirm that exact model selection. Open /model to inspect its current state.');
+    if (!matchesNativeModelSelection(this.model, model)) throw new Error('The runtime did not confirm that exact model selection. Open /model to inspect its current state.');
   }
   confirmMode(snapshot, expected) {
     this.validateSnapshot(snapshot);

@@ -99,6 +99,14 @@ zc demo                    # Explicitly simulated offline interface
 zc --plain                 # Line-oriented alternative to the full-screen interface
 ```
 
+For an **explicit account-backed model on a new session**, you can initialize it when the session is created:
+
+```bash
+zc --model 'account:zai-individual-coding-plan/GLM-5.3'
+```
+
+This requires an account entitled to that exact model. It asks the native runtime to bind the model in `session/create` and verifies the returned session state before allowing a prompt. It does not guess a provider, replace a model after rejection, or change an existing resumed conversation. The interactive `/model` switch uses a separate upstream RPC and may still fail with some runtime revisions. See [authentication lifecycle testing](docs/AUTH-LIFECYCLE.md) for the currently verified boundaries.
+
 On your first upgrade from an older preview, `zc resume` may open the session picker. Choose the existing conversation. Old prompts are not automatically resubmitted.
 
 ## Verify account login, logout, and re-login

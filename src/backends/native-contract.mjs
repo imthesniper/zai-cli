@@ -44,6 +44,21 @@ export function formatNativeModel(selection) {
   if (parsed.providerId !== providerId || parsed.modelId !== modelId) throw new Error('Invalid native model reference.');
   return value;
 }
+/** Compare a runtime-confirmed model with an explicit selection.
+ * A missing reasoning suffix means the operator chose the runtime default,
+ * not that the runtime must leave options.reasoningLevel absent. */
+export function matchesNativeModelSelection(actual, requested) {
+  if (!actual) return false;
+  const expected = typeof requested === 'string' ? parseNativeModel(requested) : requested;
+  // Validate both shapes rather than trusting a projection with missing fields.
+  formatNativeModel(actual);
+  formatNativeModel(expected);
+  return actual.providerId === expected.providerId &&
+    actual.modelId === expected.modelId &&
+    (expected.options?.reasoningLevel === undefined ||
+      actual.options?.reasoningLevel === expected.options.reasoningLevel);
+}
+
 export function snapshotModel(snapshot) {
   const modelState = snapshot.settings?.model;
   const selection = isRecord(modelState) ? modelState.current : snapshot.session?.model;

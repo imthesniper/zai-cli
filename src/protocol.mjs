@@ -46,7 +46,9 @@ export class ProtocolClient extends EventEmitter {
       const pending = this.pending.get(frame.id);
       if (!pending) return; // A late answer to a timed-out request is not a new action.
       if ('error' in frame && (!isRecord(frame.error) || typeof frame.error.message !== 'string' || !Number.isInteger(frame.error.code))) return this.fail(new Error('Malformed runtime error.'));
-      pending.finish(frame.error ? new Error(frame.error.message) : null, frame.result);
+      // Keep the protocol's numeric error identity for safe classification.
+      // Callers must not render the error message or raw data in diagnostics.
+      pending.finish(frame.error ? Object.assign(new Error(frame.error.message), { code: frame.error.code }) : null, frame.result);
     } else this.fail(new Error('Malformed runtime protocol frame.'));
   }
   async handleReverse(frame) {

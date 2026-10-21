@@ -100,3 +100,14 @@ The isolated live run confirmed `modelAdvertised=true` but failed at `phase=mode
 ZC now skips a redundant `session/setModel` mutation **only when an authoritative `session/read` confirms the exact requested model**. It still rejects disabled models and requires an exact runtime-confirmed model before sending a prompt.
 
 If the RPC rejects, the remaining error is in runtime validation or integration; no account credential is automatically replaced. If the RPC accepts but model selection still fails, investigate model projection/confirmation handling. These flags are local, fixed-schema diagnostics and do not include raw protocol frames.
+
+
+## Verified source-level alternative to the rejected model switch
+
+The isolated test on October 21 established that authentication and GLM-5.3 inference work in `native-stream`, and that the native app-server advertises GLM-5.3 but rejects a later `session/setModel` mutation. Those observations do **not** prove token expiration.
+
+In the inspected upstream ZCode legacy-v1 protocol, `session/create` accepts an optional structured `model`. Its handler binds that initial selection during session creation, while `session/setModel` takes a different post-creation mutation path. This release therefore accepts an **explicitly requested bare provider/model reference** at native session startup and verifies the model from the returned session snapshot. It does not convert an existing resumed conversation into a new session or automatically retry an unsuccessful mutation. An explicitly requested reasoning suffix is not sent through the startup path, because the inspected handler formats the startup model as provider/model; the normal acknowledged setter is required to preserve an explicit reasoning level.
+
+The live test now calls `NativeBackend.start(undefined, { initialModel: model })` for this distinct path. It reports `initialModelSupplied`, `initialModelConfirmed`, and a bounded `rpcErrorCode` if the upstream protocol rejects the call. With an initial model accepted, `selectedAtStart` should be true and `setModelRpcSent` should be false. An RPC denial still stops the test without inventing a different model or sending a paid inference prompt.
+
+**This is a candidate integration correction, not a claim of successful live account-backed app-server inference.** Automated fixture checks cannot verify the customer's live token, model entitlement, request signing, or long-session token refresh. A new live test is necessary. The upstream `session/setModel` limitation remains for interactive model changes after a session already exists.

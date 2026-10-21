@@ -44,14 +44,16 @@ test('safe failure categories distinguish missing model, bridge and project-toke
 test('auth report shows each native model-selection handshake bit without exposing raw data', () => {
   const details = formatNativePhase({
     phase:'model_select',category:'OTHER',modelAdvertised:true,
+    initialModelSupplied:true, initialModelConfirmed:false,
     selectedAtStart:false,setModelRpcSent:true,setModelRpcAcknowledged:false,
-    setModelRpcRejected:true,providerHeaderRequests:0,
+    setModelRpcRejected:true,rpcErrorCode:-32602,providerHeaderRequests:0,
     token:'Bearer private-secret',errorMessage:'Sensitive account response'
   });
   assert.equal(details, [
     'phase=model_select','category=OTHER','modelAdvertised=true',
+    'initialModelSupplied=true','initialModelConfirmed=false',
     'selectedAtStart=false','setModelRpcSent=true','setModelRpcAcknowledged=false',
-    'setModelRpcRejected=true','providerHeaderRequests=0'
+    'setModelRpcRejected=true','rpcErrorCode=-32602','providerHeaderRequests=0'
   ].join(' '));
   assert.doesNotMatch(details,/private-secret|Sensitive|token|errorMessage/);
   assert.equal(formatNativePhase({phase:'unexpected\nsecret',category:'OTHER'}), 'phase=unknown category=INVALID_DIAGNOSTIC');

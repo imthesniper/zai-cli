@@ -75,10 +75,14 @@ export function formatNativePhase(phase) {
   return [
     'phase=' + phase.phase, 'category=' + phase.category,
     'modelAdvertised=' + bit(phase.modelAdvertised),
+    'initialModelSupplied=' + bit(phase.initialModelSupplied),
+    'initialModelConfirmed=' + bit(phase.initialModelConfirmed),
     'selectedAtStart=' + bit(phase.selectedAtStart),
     'setModelRpcSent=' + bit(phase.setModelRpcSent),
     'setModelRpcAcknowledged=' + bit(phase.setModelRpcAcknowledged),
     'setModelRpcRejected=' + bit(phase.setModelRpcRejected),
+    'rpcErrorCode=' + (Number.isSafeInteger(phase.rpcErrorCode) &&
+      phase.rpcErrorCode >= -32768 && phase.rpcErrorCode <= 32767 ? phase.rpcErrorCode : 'none'),
     'providerHeaderRequests=' + (Number.isSafeInteger(phase.providerHeaderRequests) &&
       phase.providerHeaderRequests >= 0 && phase.providerHeaderRequests <= 100 ? phase.providerHeaderRequests : 'unknown'),
   ].join(' ');

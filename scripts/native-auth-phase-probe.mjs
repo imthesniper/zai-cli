@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { NativeBackend } from '../src/backends/native.mjs';
 import { validateConfig } from '../src/config.mjs';
-import { formatNativeModel } from '../src/backends/native-contract.mjs';
+import { matchesNativeModelSelection } from '../src/backends/native-contract.mjs';
 
 const mark = 'ZC_AUTH_LIFECYCLE_OK';
 const stamp = text => createHash('sha256').update(text).digest('hex').slice(0, 10);
@@ -30,8 +30,9 @@ export function failureKind(error) {
 export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutMs = 60000 }) {
   if (!['ask', 'read-only'].includes(mode)) throw new Error('Invalid native test mode');
   const summary = { phase: 'startup', category: 'UNFINISHED', modelAdvertised: false, selected: false,
+    initialModelSupplied: true, initialModelConfirmed: false,
     selectedAtStart: false, setModelRpcSent: false, setModelRpcAcknowledged: false, setModelRpcRejected: false,
-    providerHeaderRequests: 0, toolRequests: 0, responseVerified: false };
+    rpcErrorCode: null, providerHeaderRequests: 0, toolRequests: 0, responseVerified: false };
   const answerParts = [];
   let backend;
   const timeout = AbortSignal.timeout(timeoutMs);
@@ -52,9 +53,12 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
       return original(method, params);
     };
     summary.phase = 'session_start';
-    await backend.start();
+    // The inspected v1 protocol supports model in session/create. In contrast,
+    // the failing real run attempted a later session/setModel mutation.
+    await backend.start(undefined, { initialModel: model });
     if (timeout.aborted) throw new Error('Native test timeout');
-    summary.selectedAtStart = backend.model !== undefined && formatNativeModel(backend.model) === model;
+    summary.initialModelConfirmed = matchesNativeModelSelection(backend.model, model);
+    summary.selectedAtStart = backend.model !== undefined && matchesNativeModelSelection(backend.model, model);
     // Observe RPC success/failure without reading or logging payloads, response
     // bodies, provider configuration, or encrypted credential stores.
     if (backend.rpc && typeof backend.rpc.request === 'function') {
@@ -76,7 +80,7 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
     summary.modelAdvertised = catalog.some(option => option.value === model && !option.disabled);
     summary.phase = 'model_select';
     await backend.setModel(model, { allowUnlistedExact: true });
-    summary.selected = formatNativeModel(backend.model) === model;
+    summary.selected = matchesNativeModelSelection(backend.model, model);
     summary.phase = 'request';
     // No explicit shell or file tooling is requested. Any permission prompt is denied.
     await backend.send('Respond with exactly ' + mark + ' and nothing else. Do not use tools.', timeout);
@@ -87,6 +91,8 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
     return summary;
   } catch (error) {
     summary.category = failureKind(error);
+    summary.rpcErrorCode = Number.isSafeInteger(error?.code) &&
+      error.code >= -32768 && error.code <= 32767 ? error.code : null;
     // A short nonsecret phase and reason code suffice for triage. Never print errors.
     return summary;
   } finally {
