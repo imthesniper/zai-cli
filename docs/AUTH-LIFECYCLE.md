@@ -32,7 +32,7 @@ By default this uses the previously tested model `account:zai-individual-coding-
 node scripts/auth-lifecycle-check.mjs --model 'account:zai-individual-coding-plan/GLM-5.3'
 ```
 
-The program generates a **fresh Z.ai authorization URL in your own terminal** twice. After the first login, the test first checks a response through ZC's **guarded native-stream backend** (a control path using the upstream public headless client), then checks the default **native app-server backend** using the same account and temporary profile. If the control succeeds but native fails, this isolates an integration problem. It does not silently change your normal ZC backend.
+The program generates a **fresh Z.ai authorization URL in your own terminal** twice. After the first login, the test first checks a response through ZC's **guarded native-stream backend** (a control path using the upstream public headless client), then checks the default **native app-server backend** in its normal guarded (\`ask\`) mode using the same account and temporary profile. This removes the earlier confounder where the control ran guarded while app-server ran read-only/plan. The native check has a separate phase probe, which reports startup, catalog, selection, request, and completion without returning raw logs. If the control succeeds but native fails, this isolates an integration problem. It does not silently change your normal ZC backend.
 
 After successful account checks, the test **deletes only the redirected credentials file in the disposable profile** and tests whether a new request is denied. The pinned upstream public CLI does not document a `logout` command, so this tests local sign-out, **not remote token or OAuth-session revocation**. Then a second login checks whether signing in again restores access. The test clears the disposable profile and deletes it.
 
@@ -65,4 +65,16 @@ A failing stage is a blocker, not permission to bypass authentication. Do not re
 
 A result of `PASS login 1` followed by `FAIL ...` is **not** proof that the OAuth token expired. Earlier versions of this test labeled almost every error `OTHER_FAILURE` and never tried a control backend. Use the current main-branch test so that account-model failure can be distinguished from default ZC adapter failure. The test deliberately does not print raw stderr or HTTP response bodies, which may contain authentication material.
 
-The source-level native app-server integration rejects `interaction/requestProviderRuntimeHeaders`, but the pinned upstream app-server is configured for `standalone` local auth by default. That callback rejection alone does **not** establish the cause of the observed failure. The live differential test is needed.
+The source-level native app-server integration rejects `interaction/requestProviderRuntimeHeaders`, but the pinned upstream app-server is configured for `standalone` local auth by default. That callback rejection alone does **not** establish the cause of the observed failure. The live differential test is needed. An earlier live comparison confirmed account access in the guarded stream backend but reported an unclassified exit from native in read-only/plan mode. The revised probe tests the product's normal guarded app-server mode and emits a fixed category plus the stage of failure. This is diagnosis, not a declaration that default native is fixed.
+
+## Native phase results
+
+If you see `FAIL initial authenticated request through default native: phase=...`, the reported phase names are:
+
+- `session_start`: launch, create or subscribe to the app-server session.
+- `model_catalog`: inspect account-advertised models in the session.
+- `model_select`: request and verify the exact chosen model.
+- `request`: submit and await an account-backed turn.
+- `response`: verify the marker in the assistant answer.
+
+The result may also include `modelAdvertised` and `providerHeaderRequests`. They report whether the exact model was available in the runtime catalog and whether native asked the client for an authentication-header callback. No token, OAuth link, raw stderr, account ID, or private workspace content is included. A callback count of zero does **not** prove authentication succeeded or failed. The app-server uses standalone local authentication.
