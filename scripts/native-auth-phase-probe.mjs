@@ -30,7 +30,7 @@ export function failureKind(error) {
 export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutMs = 60000 }) {
   if (!['ask', 'read-only'].includes(mode)) throw new Error('Invalid native test mode');
   const summary = { phase: 'startup', category: 'UNFINISHED', modelAdvertised: false, selected: false,
-    initialModelSupplied: true, initialModelConfirmed: false,
+    initialModelSupplied: false, initialModelConfirmed: false,
     selectedAtStart: false, setModelRpcSent: false, setModelRpcAcknowledged: false, setModelRpcRejected: false,
     rpcErrorCode: null, providerHeaderRequests: 0, toolRequests: 0, responseVerified: false };
   const answerParts = [];
@@ -53,11 +53,11 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
       return original(method, params);
     };
     summary.phase = 'session_start';
-    // The inspected v1 protocol supports model in session/create. In contrast,
-    // the failing real run attempted a later session/setModel mutation.
-    await backend.start(undefined, { initialModel: model });
+    // Account-backed session/create with a bare model returned internal error
+    // on the live isolated profile. Start an unbound session and validate a
+    // fully specified reasoning selection via session/setModel instead.
+    await backend.start();
     if (timeout.aborted) throw new Error('Native test timeout');
-    summary.initialModelConfirmed = matchesNativeModelSelection(backend.model, model);
     summary.selectedAtStart = backend.model !== undefined && matchesNativeModelSelection(backend.model, model);
     // Observe RPC success/failure without reading or logging payloads, response
     // bodies, provider configuration, or encrypted credential stores.
