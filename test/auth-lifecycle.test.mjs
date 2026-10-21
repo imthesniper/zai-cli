@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { isolatedEnv, parseOptions, modelDefault } from '../scripts/auth-lifecycle-check.mjs';
+import { isolatedEnv, parseOptions, modelDefault, classify } from '../scripts/auth-lifecycle-check.mjs';
 
 test('live authentication test requires a well-formed explicit provider/model and bounded wait', () => {
   assert.equal(parseOptions([]).model, modelDefault);
@@ -27,4 +27,16 @@ test('authentication test isolates all local config, provider, credential and se
 test('real login test is never invoked from the unit-test import', () => {
   assert.equal(typeof isolatedEnv,'function');
   assert.equal(typeof parseOptions,'function');
+});
+
+test('safe failure categories distinguish missing model, bridge and project-token conditions', () => {
+  assert.equal(classify('ZC does not implement the account-provider authentication bridge', false), 'NATIVE_AUTH_BRIDGE_UNAVAILABLE');
+  assert.equal(classify('project_token_login_failed', false), 'PROJECT_TOKEN_LOGIN_FAILED');
+  assert.equal(classify('The runtime marked this model unavailable', false), 'MODEL_UNAVAILABLE');
+  assert.equal(classify('No native model selected', false), 'MODEL_NOT_CONFIGURED');
+  assert.equal(classify('HTTP 401 unauthorized', false), 'UNAUTHORIZED');
+  assert.equal(classify('Some otherwise opaque failure', false), 'UNCLASSIFIED_EXIT');
+  assert.equal(classify('project_token_login_failed', true), 'TIMEOUT_OR_EXCESS_OUTPUT');
+  // Do not return untrusted message text, account tokens, or provider headers.
+  assert.doesNotMatch(classify('Authorization: Bearer secret-live-value', false), /secret-live-value/);
 });
