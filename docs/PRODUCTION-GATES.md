@@ -105,7 +105,7 @@ GLM-5.3 account and reported:
 | Edit a different file to an exact random marker while preserving sentinels | PASS |
 | Deny explicit full-access escalation and remain guarded | PASS |
 | Cold-resume the same session with the original conversation marker intact | PASS |
-| Stop a live in-flight long-running shell command | **INCONCLUSIVE** (`RUNTIME_STOP_NOT_CONFIRMED`) |
+| Stop a live in-flight long-running shell command | **PASS in the subsequent focused run** (`ACTIVE_TOOL_ABORTED_STOP_ACKNOWLEDGED_IDLE_CONFIRMED`) |
 | Interactive file tool permission approval | **NOT ESTABLISHED** (zero runtime approvals granted) |
 
 These are user-supplied live results, not account-backed GitHub CI tests. The
@@ -124,6 +124,31 @@ shell and full-access requests are denied. The test reports INCONCLUSIVE if
 the shell never started, the turn finished before cancellation, the stop
 was not acknowledged, or runtime state could not be verified. **No PASS is inferred from the AbortError
 or the stop RPC acknowledgment alone.**
+
+### Cancellation-only retest: verified
+
+After [PR #16](https://github.com/imthesniper/zai-cli/pull/16) updated
+the status projection and cancellation evidence requirements, the operator
+ran the focused `--cancellation-only` workflow in a new disposable container
+on the same VPS and returned:
+
+```text
+PASS oauth_login: COMPLETED
+PASS guarded_session: MODE_CONFIRMED
+PASS live_cancellation: ACTIVE_TOOL_ABORTED_STOP_ACKNOWLEDGED_IDLE_CONFIRMED
+INFO permission_prompts: NO_RUNTIME_TOOL_PROMPTS_OBSERVED
+```
+
+The pass criterion required observation of the Bash tool starting, a
+`session/stop` RPC acknowledgement, an AbortError from the foreground
+turn and two consecutive protocol reads reporting an idle runtime with no
+active tools, foreground turn, pending permissions or background tasks.
+
+**This closes the live foreground shell cancellation gate for the tested
+account and Linux container runtime.** No individual tool permission prompt
+was observed, so it does not validate interactive tool approval or denial.
+This does not demonstrate cancellation across all shell process trees, network
+interruptions or platforms, nor any token refresh following real expiry.
 
 ### Retest cancellation only
 
@@ -148,8 +173,10 @@ gate, not proof of success.
 A passing CI matrix and live authentication lifecycle already establish
 packaging and basic account access on the tested platform. We still require:
 
-1. The live container acceptance results above, including actual file editing
-   and resumed-model context, with no unexpected file changes.
+1. **Validated on the tested Linux container:** exact file read/edit, unchanged
+   sentinels, denied full-access escalation, cold resume and foreground Bash
+   cancellation with acknowledged stop and stable idle. **Remaining:** individual
+   tool-specific approval/denial, which was not observed in either run.
 2. A real credential-expiry/renewal observation or a controlled integration
    check **against the actual pinned upstream refresh resolver**, not merely
    against our fake issuer.
@@ -159,7 +186,9 @@ packaging and basic account access on the tested platform. We still require:
    on supported terminals.
 
 Passing only the simulated refresh fixture cannot satisfy item 2.
-Passing live cancellation with an inconclusive stop cannot satisfy item 1.
+A prior inconclusive cancellation was replaced by a separate, positive
+focused retest. That does not validate untested tool-specific permission
+prompts or every task-stop failure mode.
 No individual PASS result asserts a stronger guarantee than its criterion.
 
 Docker provides useful isolation boundaries but is **not a formal sandbox
