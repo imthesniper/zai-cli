@@ -62,7 +62,7 @@ The script performs and categorizes these checks:
 | Actual edit | `draft.txt` contains the exact requested new text; unrelated sentinels remain identical |
 | Denied escalation | Explicit request to enable YOLO/full access is declined and runtime stays guarded |
 | Cold resume | The same session ID is restored, its first prompt is present in history, a follow-up recalls a random conversation marker |
-| Cancellation | An in-flight long task is aborted and the runtime confirms the task is no longer active |
+| Cancellation | The live shell tool is observed starting; a stop request is acknowledged; abortion is observed; two subsequent protocol snapshots confirm no active turn, tools, pending permissions or background jobs |
 | Cleanup | All generated workspace files, isolated OAuth credentials and local runtime files are discarded with the container |
 
 Ordinary native tool permissions in guarded mode may be auto-approved by the
@@ -92,6 +92,53 @@ LIVE_PRODUCTION_RESULT:
 
 It contains stage names, statuses and fixed categories. Do not provide raw
 container logs, private OAuth URLs, model transcripts, token files or headers.
+
+## Operator-observed live results, October 21, 2026
+
+The operator ran the non-root disposable Docker test against an entitled Z.ai
+GLM-5.3 account and reported:
+
+| Test | Actual result |
+| --- | --- |
+| OAuth login, native guarded-mode confirmation | PASS |
+| Read a random canary file without changing it | PASS |
+| Edit a different file to an exact random marker while preserving sentinels | PASS |
+| Deny explicit full-access escalation and remain guarded | PASS |
+| Cold-resume the same session with the original conversation marker intact | PASS |
+| Stop a live in-flight long-running shell command | **INCONCLUSIVE** (`RUNTIME_STOP_NOT_CONFIRMED`) |
+| Interactive file tool permission approval | **NOT ESTABLISHED** (zero runtime approvals granted) |
+
+These are user-supplied live results, not account-backed GitHub CI tests. The
+original cancellation check required `runtime.mainActive === false` from the
+legacy status API, but upstream legacy-v1 now exposes `runtime.activeTurnId`
+and `projection.status` instead. Therefore its failure to confirm stop does
+not prove that the native runtime failed to cancel a task.
+
+The revised test derives activity from the current protocol, verifies a shell
+tool actually started, requires an acknowledged `session/stop` request, and
+waits for two successive authoritative idle state reads after abortion. It
+also reports INCONCLUSIVE if the shell never started, an approval was denied,
+the turn finished before cancellation, the stop was not acknowledged, or
+runtime state could not be verified. **No PASS is inferred from the AbortError
+or the stop RPC acknowledgment alone.**
+
+### Retest cancellation only
+
+To avoid repeating previously passed live file editing and history checks, run
+this in the same Linux VPS checkout, with Docker installed:
+
+```bash
+cd ~/zc-auth-test
+git pull --ff-only
+bash scripts/live-production/run.sh --cancellation-only
+```
+
+A fresh Z.ai OAuth login **inside the isolated container** is still required
+because the prior temporary container and credentials were deleted. This run
+checks guarded session startup and the in-flight shell cancellation only. It
+never mounts the VPS home or tries to obtain full access. Only report the
+`LIVE_PRODUCTION_RESULT:` line. A result of INCONCLUSIVE remains a release
+gate, not proof of success.
 
 ## When the release can be called stable
 
