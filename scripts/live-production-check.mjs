@@ -52,6 +52,29 @@ export function safePermissionTarget(request, workspace, allowPaths = []) {
   return allowPaths.includes(full);
 }
 
+/** The sole shell approval permitted by this isolated live check.
+ * This policy is evaluated only within the non-root no-host-mount container.
+ * Any unrecognized property or command is denied; never allow YOLO. */
+export function safeCancellationPermission(request) {
+  if (String(request?.title || '') !== 'Allow Bash?') return false;
+  let input;
+  try { input = JSON.parse(request.input); } catch { return false; }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
+  const allowedKeys = new Set(['command','description','timeout',
+    'run_in_background','dangerouslyDisableSandbox']);
+  if (Object.keys(input).some(key => !allowedKeys.has(key)) || input.command !== 'sleep 45') {
+    return false;
+  }
+  if (input.description !== undefined && typeof input.description !== 'string') return false;
+  if (input.timeout !== undefined) {
+    const timeout = Number(input.timeout);
+    if (!Number.isSafeInteger(timeout) || timeout < 45000 || timeout > 60000) return false;
+  }
+  if (input.run_in_background !== undefined && input.run_in_background !== false) return false;
+  if (input.dangerouslyDisableSandbox !== undefined && input.dangerouslyDisableSandbox !== false) return false;
+  return true;
+}
+
 export function resultCategory(error) {
   const message = String(error?.message || '');
   if (error?.name === 'AbortError') return 'ABORTED';
@@ -145,7 +168,8 @@ async function main() {
   const onAsk = async request => {
     questionCount++;
     const allow = phase === 'edit' && safePermissionTarget(request, workspace, [editPath]) ||
-      phase === 'read' && safePermissionTarget(request, workspace, [readPath]);
+      phase === 'read' && safePermissionTarget(request, workspace, [readPath]) ||
+      phase === 'cancel' && safeCancellationPermission(request);
     if (allow) allowCount++;
     return allow;
   };
