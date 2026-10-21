@@ -219,7 +219,7 @@ async function main() {
       cancelled = error?.name === 'AbortError';
     } finally { clearTimeout(timer); }
     const after = await resumeApp.inspect().catch(() => null);
-    if (cancelled && after?.frontendTurn === false && after?.mainActive !== true) {
+    if (cancelled && after?.frontendTurn === false && after?.mainActive === false) {
       record('live_cancellation', 'PASS', 'ABORT_AND_IDLE_CONFIRMED');
     } else if (completed) {
       record('live_cancellation', 'INCONCLUSIVE', 'TURN_COMPLETED_BEFORE_STOP');
