@@ -76,7 +76,10 @@ export function nativeModelCatalog(snapshot) {
     if (!option.reasoning || option.ref.options?.reasoningLevel) { add(parseNativeModel(base)); continue; }
     const levels = option.reasoning.levels;
     if (!Array.isArray(levels) || levels.length > 32) throw new Error('Invalid native reasoning options.');
-    if (!levels.length) { add(parseNativeModel(base)); continue; }
+    // The upstream model registry permits an omitted reasoningLevel and fills
+    // its default. It is a valid exact reference, not a guessed reasoning level.
+    // Preserve that bare provider/model choice alongside advertised levels.
+    add(parseNativeModel(base), levels.length ? ' (Default reasoning)' : '');
     for (const level of levels) {
       if (!isRecord(level) || typeof level.value !== 'string' || typeof level.label !== 'string') throw new Error('Invalid native reasoning option.');
       add({ ...option.ref, options: { reasoningLevel: level.value } }, ` (${clean(level.label).replace(/\n/g, ' ').slice(0, 80)})`);

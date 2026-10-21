@@ -18,7 +18,7 @@ function make(t) {
 }
 test('startup preference and MCP requests complete before the session response without approvals', async t => {
   const f = make(t), result = await f.native.start();
-  assert.equal(result.needsModel, true); assert.equal(result.models.length, 3);
+  assert.equal(result.needsModel, true); assert.equal(result.models.length, 4);
   assert.equal(f.approvals(), 0); assert.equal(f.native.needsModel, true);
   assert.ok(!f.events.some(e => e.text?.includes('Unsupported native interaction')));
   assert.ok(f.events.some(e => e.type === 'session' && e.model === 'No model selected'));
@@ -34,6 +34,26 @@ test('catalog selection round-trips exact model and reasoning identifiers', asyn
   await f.native.setModel('fixture/model-b$high');
   assert.equal(f.native.needsModel, false); assert.equal(formatNativeModel(f.native.model), 'fixture/model-b$high');
   assert.equal((await f.native.rpc.request('fixture/stats')).selected, 1);
+});
+test('an exact model may be absent from the frontend picker but must be runtime-confirmed before use', async t => {
+  const f = make(t); await f.native.start();
+  f.native.models = async () => [];
+  await assert.rejects(f.native.setModel('fixture/model-b'), /not in the runtime catalog/);
+  await f.native.setModel('fixture/model-b', { allowUnlistedExact: true });
+  assert.equal(formatNativeModel(f.native.model), 'fixture/model-b');
+  assert.equal((await f.native.rpc.request('fixture/stats')).selected, 1);
+  assert.ok(f.events.some(e => e.type === 'notice' && e.text?.includes('runtime to validate')));
+});
+test('runtime rejection of an explicitly requested unlisted model never sends an inference turn', async t => {
+  const f = make(t); await f.native.start();
+  f.native.models = async () => [];
+  const original = f.native.rpc.request.bind(f.native.rpc);
+  f.native.rpc.request = async (method, params, options) => {
+    if (method === 'session/setModel') throw new Error('Fixture rejected this model');
+    return original(method, params, options);
+  };
+  await assert.rejects(f.native.setModel('fixture/nonexistent', { allowUnlistedExact: true }), /Fixture rejected/);
+  assert.equal((await f.native.rpc.request('fixture/stats')).sent, 0);
 });
 test('unknown and unavailable models are rejected before selection RPC', async t => {
   const f = make(t); await f.native.start();
@@ -65,8 +85,21 @@ test('unknown runtime interactions continue to fail closed and deduplicate notic
 });
 test('model catalog retains disabled status and only offers advertised reasoning levels', () => {
   const options = nativeModelCatalog(snapshot([{ ...base, reasoning: { defaultLevel: 'fabricated', levels: [{ value: 'high', label: 'High' }, { value: 'low', label: 'Low' }] }, disabledReason: '' }]));
-  assert.deepEqual(options.map(x => x.value), ['fixture/model$high', 'fixture/model$low']);
+  assert.deepEqual(options.map(x => x.value), ['fixture/model', 'fixture/model$high', 'fixture/model$low']);
   assert.ok(options.every(x => x.disabled));
+});
+test('default reasoning reference is offered alongside exact registry-advertised levels', () => {
+  const options = nativeModelCatalog(snapshot([
+    { ref: { providerId: 'account:zai-individual-coding-plan', modelId: 'GLM-5.3' },
+      label: 'GLM-5.3', reasoning: { defaultLevel: 'high', levels: [
+        { value: 'high', label: 'High' }, { value: 'low', label: 'Low' }] } },
+  ]));
+  assert.deepEqual(options.map(x => x.value), [
+    'account:zai-individual-coding-plan/GLM-5.3',
+    'account:zai-individual-coding-plan/GLM-5.3$high',
+    'account:zai-individual-coding-plan/GLM-5.3$low',
+  ]);
+  assert.ok(options.every(x => !x.disabled));
 });
 test('conflicting duplicate model entries cannot enable an unavailable model', () => {
   const options = nativeModelCatalog(snapshot([{ ...base, disabledReason: 'not entitled' }, base]));

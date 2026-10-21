@@ -126,7 +126,7 @@ export class TerminalApp {
     this.backend = createBackend({ cwd: this.cwd, config: this.config, demo: this.demo, emit: this.emit, ask: this.ask });
     try {
       const started = await this.backend.start(resume);
-      if (this.initialModel && this.config.backend === 'native') { await this.backend.setModel(this.initialModel); }
+      if (this.initialModel && this.config.backend === 'native') { await this.backend.setModel(this.initialModel, { allowUnlistedExact: true }); }
       else if (started?.needsModel && started.models?.length) {
         const saved = await readJson(this.workspacePath, {});
         const previous = saved.model;

@@ -228,12 +228,17 @@ export class NativeBackend {
     if (!Array.isArray(result.sessions)) throw new Error('Invalid native session listing.');
     return result.sessions.map(s => ({ id: s.sessionId, title: s.title, updatedAt: s.updatedAt }));
   }
-  async setModel(value) {
+  async setModel(value, { allowUnlistedExact = false } = {}) {
     const model = parseNativeModel(value);
     const options = await this.models();
     const candidate = options.find(option => option.value === value);
-    if (!candidate) throw new Error('That exact model and reasoning level are not in the runtime catalog. Open /model to select an available option.');
-    if (candidate.disabled) throw new Error(`The runtime marked this model unavailable: ${candidate.disabledReason}`);
+    // An explicitly supplied --model can be submitted to the native runtime for
+    // validation even if the projected picker catalog is incomplete. The
+    // session must acknowledge that exact model before a prompt can be sent.
+    // Ordinary picker selections must still originate from the real catalog.
+    if (!candidate && !allowUnlistedExact) throw new Error('That exact model and reasoning level are not in the runtime catalog. Open /model to select an available option.');
+    if (candidate?.disabled) throw new Error(`The runtime marked this model unavailable: ${candidate.disabledReason}`);
+    if (!candidate) this.noticeOnce('explicit-unlisted-model', 'This explicit model is absent from the current picker catalog. Asking the runtime to validate the exact provider/model; no prompt has been submitted.');
     const result = await this.rpc.request('session/setModel', { sessionId: this.session.sessionId, model, persistAsWorkspaceLastUsed: false });
     const snapshot = result?.protocol ? result : await this.rpc.request('session/read', { sessionId: this.session.sessionId });
     this.applyModelSnapshot(snapshot);

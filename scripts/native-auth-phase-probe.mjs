@@ -57,7 +57,7 @@ export async function runProbe({ cwd, model, mode = 'ask', makeBackend, timeoutM
     const catalog = await backend.models();
     summary.modelAdvertised = catalog.some(option => option.value === model && !option.disabled);
     summary.phase = 'model_select';
-    await backend.setModel(model);
+    await backend.setModel(model, { allowUnlistedExact: true });
     summary.selected = formatNativeModel(backend.model) === model;
     summary.phase = 'request';
     // No explicit shell or file tooling is requested. Any permission prompt is denied.
