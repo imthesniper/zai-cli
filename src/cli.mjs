@@ -146,7 +146,7 @@ async function plain({ config, cwd, demo, trust, prompt, resume, exec, json, mod
     if (!demo) await trustWorkspace({ cwd, config, trust, ask, signal: controller.signal });
     backend = createBackend({ cwd, config, emit, ask, demo });
     await backend.start(resume);
-    if (model && config.backend === 'native') await backend.setModel(model);
+    if (model && config.backend === 'native') await backend.setModel(model, { allowUnlistedExact: true });
     if (prompt) {
       const before = state.entries.length; await backend.send(prompt, controller.signal);
       if (!json) {
