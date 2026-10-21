@@ -83,6 +83,80 @@ jobs:
           node-version: '24.x'
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm audit --omit=dev --audit-level=high
+  public_preview_release:
+    name: Publish ZC v0.2.0 public preview
+    # Only the explicit maintainer release squash-merge on main can publish.
+    # PR and tag-triggered quality runs never receive release write access.
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'release: ZC v0.2.0 public preview')
+    needs: [verify, isolated_live_image, dependencies, distribution]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: zc-v0.2.0-public-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.22.0'
+      - name: Validate exact version and avoid replacing an existing tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node -e "const p=require('./package.json'); if (p.name !== '@striking-lions/zc' || p.version !== '0.2.0') process.exit(1)"
+          test -s docs/releases/v0.2.0.md
+          if gh release view v0.2.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v0.2.0 release already exists: refusing to overwrite." >&2
+            exit 1
+          fi
+          if git ls-remote --tags --exit-code "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/v0.2.0" >/dev/null 2>&1; then
+            echo "v0.2.0 tag already exists: refusing to move it." >&2
+            exit 1
+          fi
+      - name: Create verified application archive and installer bundle
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm pack
+          python3 scripts/package-release.py
+          cp striking-lions-zc-0.2.0.tgz dist/
+          (
+            cd dist
+            sha256sum zc-0.2.0-install.zip striking-lions-zc-0.2.0.tgz > SHA256SUMS.txt
+          )
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          path = Path("dist/zc-0.2.0-install.zip")
+          with zipfile.ZipFile(path) as artifact:
+              required = {"striking-lions-zc-0.2.0.tgz", "install.sh",
+                          "install.ps1", "QUICKSTART.md", "SHA256SUMS.txt"}
+              assert required.issubset(artifact.namelist()), "Release bundle is incomplete"
+              assert artifact.testzip() is None, "Release bundle failed ZIP checksum test"
+          PY
+      - name: Create public GitHub prerelease and attach checksummed assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create v0.2.0 \
+            dist/zc-0.2.0-install.zip \
+            dist/striking-lions-zc-0.2.0.tgz \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ZC Workbench v0.2.0 (Public Preview)" \
+            --notes-file docs/releases/v0.2.0.md \
+            --prerelease
+          gh release view v0.2.0 --repo "$GITHUB_REPOSITORY" --json url,isPrerelease,tagName
   distribution:
     name: Installation bundle
     needs: [verify, dependencies]

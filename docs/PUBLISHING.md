@@ -14,6 +14,16 @@ Run `npm run check`, the real runtime public-entry verification, packaging/insta
 
 Review actual model/tool activity, denial and approval, cancellation, restart recovery, authentication renewal, and terminal behavior before upgrading stability claims. Keep pending items in `RELEASE-READINESS.md`. Do not remove failed tests merely to publish.
 
+## v0.2.0 public preview
+
+The maintainer has authorized **public release as an explicitly labeled GitHub prerelease**, despite the outstanding stable-release gates. This is not an assertion of audited security, token-expiry renewal or universal platform compatibility.
+
+The `v0.2.0` public preview is deliberately published by a **one-time gated Quality job**, only when a reviewed squash merge on `main` starts with the commit title `release: ZC v0.2.0 public preview`. The job waits for the complete cross-platform verification matrix, dependency audit, disposable Docker image build, and installation bundle. It rebuilds the distributable from the exact commit, checks the ZIP, computes outer SHA-256 sums, creates the GitHub tag and prerelease, and attaches the installer ZIP, npm-format `.tgz`, and checksum text.
+
+The release job fails closed rather than overwriting an existing release or moving its tag. Pull requests, unrelated merges, ordinary tags and npm installation do not publish. Publication is via GitHub's release API using the repository's short-lived Actions token with `contents: write` only for the publishing job. No developer token or secret needs to be shared in chat. The GitHub-hosted files are downloadable installation artifacts, not an npm registry package, signed executable, standalone offline binary, or supply-chain attestation.
+
+Public documentation and release notes must state the precise Linux live results and what is not established, particularly real token-expiry renewal, OS-level sandboxing, interactive per-tool approvals, Windows/macOS live UI verification and independent security audit. See [the published notes](releases/v0.2.0.md).
+
 ## Distribution
 
 `npm pack` creates the application tarball. The `files` allowlist excludes tests, local state, keys, and unrelated files. `scripts/package-release.py` builds an installation ZIP with the tarball, POSIX and Windows installers, quickstart text, and SHA-256 checksums. The managed installer downloads its private Node engine and dependencies at installation time.

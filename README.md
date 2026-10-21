@@ -8,11 +8,35 @@ ZC combines a multiline editor, searchable conversation history, tool activity, 
 
 Independent software by **Striking Lions**, not affiliated with Z.ai, Anthropic, Apple, or OpenAI. An account with model access is required. This repository is the home of `@striking-lions/zc`; it does not claim that package is published to the npm registry.
 
-**Release status:** 0.2.0 is an integration release. Automated checks cover frontend behavior, packaging, and runtime installation. An operator's live Linux VPS tests also confirmed Z.ai account login, repeated authenticated responses through the default native backend, loss of local account access after temporary credential removal, and successful re-login. These tests **do not** establish automatic renewal of an expired token, remote OAuth revocation, unattended long-running tasks, or every terminal. See [release readiness](docs/RELEASE-READINESS.md) for the exact evidence and remaining limits.
+**Release status:** 0.2.0 is available as a public GitHub preview, and remains an integration release rather than a stable, audited build. Automated checks cover frontend behavior, packaging, and runtime installation. An operator's live Linux VPS tests also confirmed Z.ai account login, repeated authenticated responses through the default native backend, loss of local account access after temporary credential removal, and successful re-login. These tests **do not** establish automatic renewal of an expired token, remote OAuth revocation, unattended long-running tasks, or every terminal. See [release readiness](docs/RELEASE-READINESS.md) for the exact evidence and remaining limits.
 
 ![ZC light interface](docs/workbench-light.png)
 
 *Rendered by ZC using a synthetic conversation. [Dark preview](docs/workbench-dark.png).*
+
+## Get ZC 0.2.0 public preview
+
+**[Download ZC Workbench v0.2.0 from GitHub Releases](https://github.com/imthesniper/zai-cli/releases/tag/v0.2.0)**
+
+Choose `zc-0.2.0-install.zip` for the cross-platform installation bundle, which includes the Node-managed installers, packaged application, a quickstart and checksums. Review the ZIP contents and [security boundaries](SECURITY.md) first. The installer needs an internet connection and an entitled Z.ai account.
+
+**macOS / Linux:**
+
+```bash
+unzip zc-0.2.0-install.zip -d zc-0.2.0
+cd zc-0.2.0
+bash install.sh --add-path
+```
+
+**Windows PowerShell:**
+
+```powershell
+Expand-Archive .\zc-0.2.0-install.zip -DestinationPath .\zc-0.2.0
+Set-Location .\zc-0.2.0
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -AddPath
+```
+
+Run the installers as your ordinary user, never using `sudo` or an administrator terminal. Reopen the terminal after adding PATH, then use `zc login` and `zc`. This is a **public preview**, not a code-signed binary or npm registry publication. [Read the release notes](docs/releases/v0.2.0.md) for what is and is not verified.
 
 ## Install
 

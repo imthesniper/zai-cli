@@ -18,8 +18,11 @@
 
 # Changelog
 
-## 0.2.0 - Workbench integration preview
+## 0.2.0 - Public GitHub preview (2026-10-21)
 
+- Public prerelease package: versioned installer ZIP, application tarball, and downloadable SHA-256 checksum manifest via GitHub Releases, with automatic publication only after the release commit passes the Quality workflow.
+- Release notes explicitly distinguish live-tested Linux login/edit/cancel/resume from unverified token-expiry renewal, individual tool approval, external security audit, and Windows/macOS interactive behavior.
+- No npm registry publication, code signing or full offline binary distribution is claimed.
 - Managed public runtime dependency and isolated-engine installers; normal launch is `zc`.
 - Quiet native turns use session health checks and paginated completion recovery instead of an inactivity stop.
 - Mouse caret positioning, drag selection, keyboard selection, undo/redo, explicit prompt history.
