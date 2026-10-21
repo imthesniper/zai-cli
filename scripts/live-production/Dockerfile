@@ -3,7 +3,7 @@
 FROM node:24.14.0-bookworm-slim
 RUN useradd --uid 10001 --create-home --home-dir /home/zctest --shell /usr/sbin/nologin zctest
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json npm-shrinkwrap.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY . .
 RUN chown -R 10001:10001 /app
