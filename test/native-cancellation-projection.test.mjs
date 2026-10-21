@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { nativeActivity } from '../src/backends/native-contract.mjs';
 import { nativeCancellationIdle, awaitNativeCancellationIdle, cancellationVerdict,
-  parseLiveOptions } from '../scripts/live-production-check.mjs';
+  parseLiveOptions, safeCancellationPermission } from '../scripts/live-production-check.mjs';
 
 const snapshot = ({ projectionStatus = 'idle', activeTurnId, permissionCount = 0,
   toolCount = 0, legacyMainActive } = {}) => ({
@@ -88,4 +88,24 @@ test('opt-in cancellation-only mode requires a fresh container login and no long
   assert.throws(()=>parseLiveOptions(['--cancellation-only','--continuity-minutes','75']),
     /either --cancellation-only/);
   assert.throws(()=>parseLiveOptions(['--no-login']),/Usage/);
+});
+
+test('cancellation grants only a literal sleep 45 Bash call without unsafe options', () => {
+  const input = value => ({ title:'Allow Bash?', input:JSON.stringify(value) });
+  assert.equal(safeCancellationPermission(input({command:'sleep 45'})), true);
+  assert.equal(safeCancellationPermission(input({command:'sleep 45',description:'Pause fixture',
+    timeout:50000,run_in_background:false,dangerouslyDisableSandbox:false})),true);
+  for(const item of [
+    input({command:'sleep 45; rm -rf /'}),
+    input({command:'sleep 45 &'}),
+    input({command:'sleep 45',run_in_background:true}),
+    input({command:'sleep 45',dangerouslyDisableSandbox:true}),
+    input({command:'sleep 45',timeout:1000}),
+    input({command:'sleep 45',timeout:70000}),
+    input({command:'sleep 45',shell:'bash'}),
+    input({command:'sleep 45',cwd:'/etc'}),
+    {title:'Allow Bash?',input:'not-json'},
+    {title:'Enable YOLO?',input:'{"command":"sleep 45"}'},
+    {title:'Allow Bash?',input:'{"command":"sleep 45","description":5}'},
+  ]) assert.equal(safeCancellationPermission(item),false,JSON.stringify(item));
 });
