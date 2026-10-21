@@ -63,3 +63,46 @@ test('classifications contain only fixed nonsecret reason codes', () => {
   assert.equal(failureKind(new Error('project_token_login_failed')), 'PROJECT_TOKEN_LOGIN_FAILED');
   assert.equal(failureKind(new Error('model is unavailable')), 'MODEL_SELECTION');
 });
+
+test('phase probe separates upstream RPC rejection from model projection mismatch', async () => {
+  const rejected = await runProbe({ cwd: process.cwd(), model, makeBackend: ({emit}) => ({
+    rpc: { request: async method => { if (method === 'session/setModel') throw new Error('classified privately'); return {}; } },
+    interaction: async () => {},
+    async start() {},
+    async models() { return [{value:model,disabled:false}]; },
+    async setModel() { await this.rpc.request('session/setModel',{model}); },
+    async dispose() {},
+  }) });
+  assert.equal(rejected.phase,'model_select');
+  assert.equal(rejected.setModelRpcSent,true);
+  assert.equal(rejected.setModelRpcRejected,true);
+  assert.equal(rejected.setModelRpcAcknowledged,false);
+  assert.doesNotMatch(JSON.stringify(rejected), /classified privately/);
+
+  const acknowledged = await runProbe({ cwd: process.cwd(), model, makeBackend: () => ({
+    rpc: { request: async method => (method==='session/setModel' ? {ok:true} : {}) },
+    interaction: async () => {},
+    async start() {},
+    async models() { return [{value:model,disabled:false}]; },
+    async setModel() {
+      await this.rpc.request('session/setModel',{model});
+      throw new Error('a secret local snapshot error');
+    },
+    async dispose() {},
+  }) });
+  assert.equal(acknowledged.phase,'model_select');
+  assert.equal(acknowledged.setModelRpcSent,true);
+  assert.equal(acknowledged.setModelRpcAcknowledged,true);
+  assert.equal(acknowledged.setModelRpcRejected,false);
+  assert.doesNotMatch(JSON.stringify(acknowledged), /secret/);
+});
+test('phase probe identifies matching model at startup without emitting selection contents', async () => {
+  const result = await runProbe({cwd:process.cwd(),model, makeBackend: options=>{
+    const f = mock()(options);
+    f.start = async () => { f.model = {providerId:'account:zai-individual-coding-plan',modelId:'GLM-5.3'}; };
+    return f;
+  }});
+  assert.equal(result.selectedAtStart,true);
+  assert.equal(result.category,'SUCCESS');
+  assert.equal('model' in result,false);
+});

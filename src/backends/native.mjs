@@ -238,6 +238,10 @@ export class NativeBackend {
     // Ordinary picker selections must still originate from the real catalog.
     if (!candidate && !allowUnlistedExact) throw new Error('That exact model and reasoning level are not in the runtime catalog. Open /model to select an available option.');
     if (candidate?.disabled) throw new Error(`The runtime marked this model unavailable: ${candidate.disabledReason}`);
+    // session/read refreshed the authoritative current selection. Do not ask
+    // the upstream runtime to mutate an already-selected exact model.
+    // This also avoids avoidable setModel errors in account-backed sessions.
+    if (this.model && formatNativeModel(this.model) === value) return;
     if (!candidate) this.noticeOnce('explicit-unlisted-model', 'This explicit model is absent from the current picker catalog. Asking the runtime to validate the exact provider/model; no prompt has been submitted.');
     const result = await this.rpc.request('session/setModel', { sessionId: this.session.sessionId, model, persistAsWorkspaceLastUsed: false });
     const snapshot = result?.protocol ? result : await this.rpc.request('session/read', { sessionId: this.session.sessionId });
