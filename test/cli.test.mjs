@@ -45,8 +45,11 @@ test('noninteractive backend setup saves a usable config', async t => {
 
 test('native diagnostics do not report account-authentication support as ready', async t => {
   const result = await cli(t, ['doctor', '--backend', 'native', '--json']);
-  assert.equal(result.code, 1);
   const diagnostic = JSON.parse(result.output);
+  // Installation health is distinct from authentication. CI installs the runtime,
+  // while credential-free source checkouts may intentionally not have it.
+  const installationFailed = diagnostic.checks.some(c => c.ok === false && c.name !== 'git');
+  assert.equal(result.code, installationFailed ? 1 : 0);
   const auth = diagnostic.checks.find(check => check.name === 'authentication');
   assert.equal(auth.ok, null); assert.match(auth.detail, /Not tested/);
 });

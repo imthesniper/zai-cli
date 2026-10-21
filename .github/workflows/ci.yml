@@ -21,10 +21,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
       - name: Install the pinned runtime
@@ -34,14 +34,34 @@ jobs:
       - name: Real POSIX terminal exercise
         run: python3 scripts/terminal-smoke.py
         if: runner.os != 'Windows'
-      - name: Validate the actual runtime public entry point
+      - name: Execute the actual runtime public version command
         run: node scripts/verify-runtime.mjs
       - run: npm pack
       - run: npm install --global --ignore-scripts ./striking-lions-zc-0.2.0.tgz
       - run: zc --version
       - run: zc demo --plain
-      - uses: actions/upload-artifact@v4
+      - name: Real managed installer in an isolated home
+        if: matrix.node == '24.x'
+        run: node scripts/managed-install-check.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: zc-${{ matrix.os }}-node${{ matrix.node }}
           path: striking-lions-zc-0.2.0.tgz
           if-no-files-found: error
+  dependencies:
+    name: Dependency audit and lock review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.x'
+      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Resolve distribution lock metadata
+        run: |
+          npm shrinkwrap
+          cat npm-shrinkwrap.json
+      - run: npm audit --omit=dev --audit-level=high

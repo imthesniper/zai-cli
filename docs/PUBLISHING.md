@@ -1,33 +1,21 @@
-# Publishing ZC
+# Maintaining and publishing ZC
 
-This delivery provides a source archive, an npm package, and an installation ZIP. It does not claim an npm registry publication or a successful GitHub push.
+Canonical repository: https://github.com/imthesniper/zai-cli
 
-## Validate before sharing
+The imported baseline is `Misbah-Engr/zai-cli@d7e88b2676d279b207e70dedb123b9eaf9999036`, including its macOS canonical-path repair. The repository migration preserves the source license and NOTICE. No private account files, source workspaces, or model conversations belong in a release.
 
-```bash
-npm run check
-python3 scripts/terminal-smoke.py
-npm pack
-```
+## Source changes
 
-On a networked release machine with Node 24.14 or newer, perform a clean npm install so the pinned runtime and its transitive dependencies are installed. The package has no postinstall script. Check login, actual model/tool activity, cancellation, permission denial, a reviewed edit, and session resume on the target platforms before calling it stable.
+Use a focused branch and reviewed pull request. Do not force-push the default branch or replace tags. The old repository-creation helper is disabled so it cannot publish to an unrelated account/repository. For local inspection commands, `git --no-pager` or `GH_PAGER=cat` avoids an unexpected pager.
 
-The included GitHub Actions matrix targets Windows, Linux, and macOS. A configuration file is not proof those jobs passed. Run it after publishing the source and retain its actual results.
+## Required checks
 
-## Repository
+Run `npm run check`, the real runtime public-entry verification, packaging/install checks, and the Quality matrix on Linux, macOS, and Windows. POSIX PTY tests exercise the real frontend with a synthetic runtime. A green fixture run does not prove live inference, token renewal, or eight-hour task reliability.
 
-The optional publisher uses an authenticated GitHub CLI, defaults to a new private repository, and refuses an existing origin/target instead of force-pushing:
+Review actual model/tool activity, denial and approval, cancellation, restart recovery, authentication renewal, and terminal behavior before upgrading stability claims. Keep pending items in `RELEASE-READINESS.md`. Do not remove failed tests merely to publish.
 
-```bash
-gh auth login
-node scripts/publish.mjs --dry-run
-node scripts/publish.mjs
-```
+## Distribution
 
-For an existing repository, use a reviewed branch and pull request. Do not replace history. Keep the runtime as a pinned dependency rather than checking in user credentials, session databases, or copied vendor bundles. The publisher does not publish to npm.
+`npm pack` creates the application tarball. The `files` allowlist excludes tests, local state, keys, and unrelated files. `scripts/package-release.py` builds an installation ZIP with the tarball, POSIX and Windows installers, quickstart text, and SHA-256 checksums. The managed installer downloads its private Node engine and dependencies at installation time.
 
-## Install ZIP
-
-The ZIP contains `install.sh`, `install.ps1`, `striking-lions-zc-0.2.0.tgz`, `SHA256SUMS.txt`, and `QUICKSTART.md` at the same level. The installer downloads its isolated Node engine and runtime dependencies. It is not an offline distribution.
-
-A registry or signed binary release needs its own authorized publishing account, signing/provenance process, complete dependency lock, and target-platform release validation. These are not simulated by a local tarball.
+CI artifacts are build results, not an npm registry publication. A stable GitHub Release, npm publication, signing, or provenance attestation must be an explicit maintainer action after the corresponding release gates pass. Do not label an artifact code-signed merely because it has a checksum.

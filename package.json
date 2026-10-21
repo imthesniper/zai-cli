@@ -47,10 +47,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Misbah-Engr/zai-cli.git"
+    "url": "git+https://github.com/imthesniper/zai-cli.git"
   },
-  "homepage": "https://github.com/Misbah-Engr/zai-cli#readme",
+  "homepage": "https://github.com/imthesniper/zai-cli#readme",
   "bugs": {
-    "url": "https://github.com/Misbah-Engr/zai-cli/issues"
+    "url": "https://github.com/imthesniper/zai-cli/issues"
   }
 }
