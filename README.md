@@ -117,13 +117,13 @@ This checks initial login, a second authenticated request, local logout and deni
 
 ## Test production-readiness workflows
 
-The live account login/logout/re-login lifecycle has passed on a Linux VPS. A subsequent disposable Docker test also confirmed **real file reading and editing with unchanged sentinels, denied full-access escalation, and cold conversation recovery**. The cancellation result was inconclusive and ordinary tool-approval dialogs were not exercised. See [production acceptance gates](docs/PRODUCTION-GATES.md) for the evidence and focused cancellation rerun.
+The live account login/logout/re-login lifecycle has passed on a Linux VPS. Separate disposable Docker tests confirmed **real file reading and editing with unchanged sentinels, denied full-access escalation, cold conversation recovery, and cancellation of a verified running shell tool**. Individual tool-specific approval/denial prompts have not been observed, and genuine token-expiry renewal remains unverified. See [production acceptance gates](docs/PRODUCTION-GATES.md) for the evidence and limits.
 
 ```bash
 bash scripts/live-production/run.sh
 ```
 
-For a focused cancellation retest without replaying previously verified editing/history scenarios, run `bash scripts/live-production/run.sh --cancellation-only`. This also uses a fresh, private container login.
+The optional `bash scripts/live-production/run.sh --cancellation-only` command repeats the now-verified cancellation acceptance check in a fresh, private container, without rerunning editing/history scenarios.
 
 This test requires Docker and a fresh Z.ai login *inside* an isolated, non-root container with no host files mounted. It never runs agent-editing prompts directly against your VPS home. The automated suite also tests simulated token expiry/reissue using a **fake local issuer**. That simulation does not certify the official runtime's real token renewal after expiry.
 
