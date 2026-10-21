@@ -78,3 +78,12 @@ If you see `FAIL initial authenticated request through default native: phase=...
 - `response`: verify the marker in the assistant answer.
 
 The result may also include `modelAdvertised` and `providerHeaderRequests`. They report whether the exact model was available in the runtime catalog and whether native asked the client for an authentication-header callback. No token, OAuth link, raw stderr, account ID, or private workspace content is included. A callback count of zero does **not** prove authentication succeeded or failed. The app-server uses standalone local authentication.
+
+
+## Native catalog selection correction (candidate)
+
+The native UI now keeps the bare `providerId/modelId` reference when upstream also advertises individual reasoning levels. The upstream registry documents that an omitted reasoning level uses the default. Previously, ZC's catalog expansion dropped that valid bare reference.
+
+For an exact `--model` explicitly provided by the operator, ZC may ask the upstream app-server to validate that selection even if the frontend's projected picker omits it. This does not select a substitute model. It requires a matching `session/setModel` confirmation from the runtime **before** any model request. A runtime-advertised disabled model remains forbidden, and ordinary picker selection still requires catalog membership. A runtime rejection stops the test; it is not retried with a different backend or billed API.
+
+These changes address two ZC-side selection guards, but they are **not** evidence that the live Z.ai app-server will advertise or acknowledge the model after standalone login. A new isolated live test is required before removing the production-readiness caveat.
