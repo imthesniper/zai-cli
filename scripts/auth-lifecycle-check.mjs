@@ -46,12 +46,21 @@ export function isolatedEnv(profile, base = process.env) {
   return env;
 }
 
-function classify(text, timedOut) {
+export function classify(text, timedOut) {
   if (timedOut) return 'TIMEOUT_OR_EXCESS_OUTPUT';
-  if (text.includes('project_token_login_failed')) return 'PROJECT_TOKEN_LOGIN_FAILED';
-  if (/no model selected|model access is not configured/i.test(text)) return 'MODEL_NOT_CONFIGURED';
-  if (/unauthori[sz]ed|401/.test(text)) return 'UNAUTHORIZED';
-  return 'OTHER_FAILURE';
+  const input = String(text).slice(-160000);
+  if (/account-provider authentication bridge|NATIVE_ACCOUNT_AUTH_UNAVAILABLE/i.test(input)) return 'NATIVE_AUTH_BRIDGE_UNAVAILABLE';
+  if (/project_token_login_failed/i.test(input)) return 'PROJECT_TOKEN_LOGIN_FAILED';
+  if (/project_token_login_required/i.test(input)) return 'PROJECT_TOKEN_LOGIN_REQUIRED';
+  if (/no native model selected|no model selected|model access is not configured/i.test(input)) return 'MODEL_NOT_CONFIGURED';
+  if (/not in the runtime catalog|runtime marked this model unavailable/i.test(input)) return 'MODEL_UNAVAILABLE';
+  if (/permission mode|mode change|reported plan|reported guarded/i.test(input)) return 'MODE_UNCONFIRMED';
+  if (/unsupported protocol|runtime snapshot|app-server/i.test(input)) return 'NATIVE_PROTOCOL_OR_RUNTIME_FAILURE';
+  if (/403|forbidden|not entitled/i.test(input)) return 'ACCESS_FORBIDDEN';
+  if (/unauthori[sz]ed|401/i.test(input)) return 'UNAUTHORIZED';
+  if (/timed out|timeout/i.test(input)) return 'RUNTIME_TIMEOUT';
+  if (/ZCode runtime exited|Runtime disconnected/i.test(input)) return 'RUNTIME_DISCONNECTED';
+  return 'UNCLASSIFIED_EXIT';
 }
 
 function execute(script, args, env, cwd, interactive = false, timeoutMs = 180000) {
@@ -86,9 +95,10 @@ async function main() {
     console.log((pass ? 'PASS ' : 'FAIL ') + step + ': ' + detail);
     return pass;
   };
-  const probe = () => execute(zc, ['exec',
+  const probe = (backend = 'native') => execute(zc, ['exec',
     'Respond with exactly ' + marker + ' and nothing else. Do not use tools.',
-    '--cwd', workspace, '--backend', 'native', '--mode', 'read-only',
+    '--cwd', workspace, '--backend', backend,
+    '--mode', backend === 'native-stream' ? 'guarded' : 'read-only',
     '--model', model, '--trust'], env, workspace);
   const login = async label => {
     console.log('\nThe official Z.ai OAuth URL will be printed by your local runtime.');
@@ -97,19 +107,23 @@ async function main() {
     return record(label, result.code === 0 && !result.timedOut, result.code === 0 && !result.timedOut ? 'completed' : 'did not complete');
   };
   const logout = async label => {
-    const result = await execute(zcode, ['logout'], env, workspace);
-    return record(label, result.code === 0 && !result.timedOut, result.code === 0 && !result.timedOut ? 'isolated logout completed' : classify(result.output, result.timedOut));
+    // The pinned public CLI does not document a logout subcommand. Remove only
+    // this throwaway profile's explicitly redirected local credentials.
+    // Never claim that this revokes an upstream browser or server session.
+    await rm(env.ZCODE_CLI_CREDENTIALS_FILE, { force: true });
+    return record(label, true, 'temporary local credentials cleared; remote revocation not asserted');
   };
-  const request = async label => {
-    const result = await probe();
-    return record(label, result.code === 0 && result.output.includes(marker),
-      result.code === 0 && result.output.includes(marker) ? 'authenticated ZC reply received' : classify(result.output, result.timedOut));
+  const request = async (label, backend = 'native') => {
+    const result = await probe(backend);
+    const pass = result.code === 0 && !result.timedOut && result.output.includes(marker);
+    return record(label, pass, pass ? 'account-backed reply received' : classify(result.output, result.timedOut) + ' (exit ' + result.code + ')');
   };
   try {
     console.log('LIVE ZC auth lifecycle test. This temporary profile has its own credentials, config, sessions, and HOME.');
     console.log('The test consumes model quota. It never submits your source files or runs shell tools.');
     if (!await login('login 1')) return;
-    if (!await request('initial authenticated request')) return;
+    if (!await request('account access control through guarded native-stream', 'native-stream')) return;
+    if (!await request('initial authenticated request through default native')) return;
     if (delaySeconds) {
       console.log('Waiting ' + delaySeconds + ' seconds. Token expiry is not established by elapsed time alone.');
       await new Promise(done => setTimeout(done, delaySeconds * 1000));
@@ -117,8 +131,11 @@ async function main() {
     if (!await request('subsequent authenticated request')) return;
     if (!await logout('logout 1')) return;
     const denied = await probe();
-    if (!record('request denied after logout', denied.code !== 0,
-      denied.code !== 0 ? classify(denied.output, denied.timedOut) : 'UNEXPECTED_ACCESS')) return;
+    const deniedReason = classify(denied.output, denied.timedOut);
+    const expectedDenial = ['UNAUTHORIZED', 'PROJECT_TOKEN_LOGIN_REQUIRED', 'MODEL_NOT_CONFIGURED', 'MODEL_UNAVAILABLE'].includes(deniedReason);
+    if (!record('request denied after temporary credential removal',
+      denied.code !== 0 && !denied.timedOut && expectedDenial,
+      denied.code === 0 ? 'UNEXPECTED_ACCESS' : deniedReason + ' (exit ' + denied.code + ')')) return;
     if (!await login('login 2')) return;
     if (!await request('authenticated request after re-login')) return;
     await logout('final isolated logout');
@@ -126,7 +143,7 @@ async function main() {
     await rm(profile, { recursive: true, force: true, maxRetries: 3 });
     console.log('Temporary test profile disposed. Existing saved ZCode login was not intentionally logged out.');
     console.log('SHARE ONLY THIS RESULT: ' + JSON.stringify(results));
-    if (results.length !== 8 || results.some(row => !row.pass)) process.exitCode = 1;
+    if (results.length !== 9 || results.some(row => !row.pass)) process.exitCode = 1;
   }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
