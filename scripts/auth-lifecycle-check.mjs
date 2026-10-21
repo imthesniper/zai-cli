@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const zc = join(root, 'bin', 'zc.mjs');
 const zcode = join(root, 'node_modules', 'zcode-app-cli', 'bin', 'zcode.js');
+const nativeProbe = join(root, 'scripts', 'native-auth-phase-probe.mjs');
 const marker = 'ZC_AUTH_LIFECYCLE_OK';
 export const modelDefault = 'account:zai-individual-coding-plan/GLM-5.3';
 
@@ -95,11 +96,28 @@ async function main() {
     console.log((pass ? 'PASS ' : 'FAIL ') + step + ': ' + detail);
     return pass;
   };
-  const probe = (backend = 'native') => execute(zc, ['exec',
-    'Respond with exactly ' + marker + ' and nothing else. Do not use tools.',
-    '--cwd', workspace, '--backend', backend,
-    '--mode', backend === 'native-stream' ? 'guarded' : 'read-only',
-    '--model', model, '--trust'], env, workspace);
+  const probe = async (backend = 'native') => {
+    if (backend === 'native') {
+      const result = await execute(nativeProbe, [model, workspace, 'ask'], env, workspace, false, 180000);
+      let phase;
+      try {
+        const candidate = JSON.parse(result.output.trim());
+        if (candidate && typeof candidate.phase === 'string' && typeof candidate.category === 'string' &&
+            typeof candidate.responseVerified === 'boolean' &&
+            /^[a-z_]{1,32}$/.test(candidate.phase) && /^[A-Z_]{1,48}$/.test(candidate.category)) phase = candidate;
+      } catch { /* Return the fixed diagnostic category, never raw output. */ }
+      const good = result.code === 0 && phase?.responseVerified === true;
+      return { code: good ? 0 : 1, output: good ? marker : '', timedOut: result.timedOut,
+        diagnostic: phase ? 'phase=' + phase.phase + ' category=' + phase.category +
+          ' modelAdvertised=' + Boolean(phase.modelAdvertised) +
+          ' providerHeaderRequests=' + (Number.isSafeInteger(phase.providerHeaderRequests) ? phase.providerHeaderRequests : 'unknown')
+          : 'phase=unknown category=' + classify(result.output, result.timedOut) };
+    }
+    return execute(zc, ['exec',
+      'Respond with exactly ' + marker + ' and nothing else. Do not use tools.',
+      '--cwd', workspace, '--backend', 'native-stream', '--mode', 'guarded',
+      '--model', model, '--trust'], env, workspace);
+  };
   const login = async label => {
     console.log('\nThe official Z.ai OAuth URL will be printed by your local runtime.');
     console.log('Open it privately, then return to this terminal. Never paste the link into chat.');
@@ -116,7 +134,8 @@ async function main() {
   const request = async (label, backend = 'native') => {
     const result = await probe(backend);
     const pass = result.code === 0 && !result.timedOut && result.output.includes(marker);
-    return record(label, pass, pass ? 'account-backed reply received' : classify(result.output, result.timedOut) + ' (exit ' + result.code + ')');
+    return record(label, pass, pass ? 'account-backed reply received' :
+      (result.diagnostic || classify(result.output, result.timedOut)) + ' (exit ' + result.code + ')');
   };
   try {
     console.log('LIVE ZC auth lifecycle test. This temporary profile has its own credentials, config, sessions, and HOME.');
@@ -130,7 +149,7 @@ async function main() {
     }
     if (!await request('subsequent authenticated request')) return;
     if (!await logout('logout 1')) return;
-    const denied = await probe();
+    const denied = await probe('native-stream');
     const deniedReason = classify(denied.output, denied.timedOut);
     const expectedDenial = ['UNAUTHORIZED', 'PROJECT_TOKEN_LOGIN_REQUIRED', 'MODEL_NOT_CONFIGURED', 'MODEL_UNAVAILABLE'].includes(deniedReason);
     if (!record('request denied after temporary credential removal',
