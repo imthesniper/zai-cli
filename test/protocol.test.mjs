@@ -18,6 +18,13 @@ test('RPC correlates out-of-order answers by ID', async t => {
   input.write(JSON.stringify({ id: sent[0].id, result: 1 }) + '\n');
   assert.deepEqual(await Promise.all([first, second]), [1, 2]);
 });
+test('RPC preserves a validated numeric failure code without exposing raw error data', async t => {
+  const { rpc, input, sent } = transport(t); const pending = rpc.request('session/setModel');
+  input.write(JSON.stringify({ id: sent[0].id, error: { code: -32602, message: 'Model rejected', data: { credential: 'do-not-display' } } }) + '\n');
+  await assert.rejects(pending, err => err instanceof Error && err.code === -32602 &&
+    err.message === 'Model rejected' && !JSON.stringify(err).includes('do-not-display'));
+  assert.equal(rpc.closed, false);
+});
 test('RPC accepts UTF-8 split inside a multibyte character', async t => {
   const { rpc, input, sent } = transport(t); const pending = rpc.request('read');
   const frame = Buffer.from(JSON.stringify({ id: sent[0].id, result: '你好' }) + '\n');
