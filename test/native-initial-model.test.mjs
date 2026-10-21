@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { runProcess } from '../src/process.mjs';
 import { NativeBackend } from '../src/backends/native.mjs';
 import { validateConfig } from '../src/config.mjs';
 import { formatNativeModel, matchesNativeModelSelection } from '../src/backends/native-contract.mjs';
@@ -62,4 +66,23 @@ test('native matcher accepts upstream default reasoning only when user omitted e
   assert.equal(matchesNativeModelSelection(actual, selected + '$high'), false);
   assert.equal(matchesNativeModelSelection(actual, 'fixture-account/other'), false);
   assert.equal(matchesNativeModelSelection(undefined, selected), false);
+});
+
+test('zc exec --model binds account identity during create, without post-create setter', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'zc-native-init-cli-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const state = join(home, 'zc');
+  await mkdir(state);
+  await writeFile(join(state, 'config.json'), JSON.stringify({
+    backend: 'native', mode: 'ask', runtime: { command: process.execPath, args: [runtime] }
+  }));
+  const bin = fileURLToPath(new URL('../bin/zc.mjs', import.meta.url));
+  const result = await runProcess(process.execPath, [
+    bin, 'exec', 'test no tools', '--backend', 'native',
+    '--model', selected, '--trust'
+  ], { cwd: home, timeout: 20000, maxBytes: 16000,
+    env: { ...process.env, ZC_HOME: state, ZAI_API_KEY: '' } });
+  assert.equal(result.code, 0, result.output);
+  assert.match(result.output, /Native initial model accepted/);
+  assert.doesNotMatch(result.output, /Fixture refuses post-create setModel/);
 });
