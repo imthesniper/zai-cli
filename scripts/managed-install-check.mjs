@@ -21,11 +21,15 @@ const env = { ...process.env, HOME: home, USERPROFILE: home,
   LOCALAPPDATA: join(home, 'LocalAppData'), XDG_DATA_HOME: join(home, 'data'),
   ZC_HOME: state, SHELL: '/bin/bash', npm_config_cache: join(home, 'npm-cache'),
   ZCODE_DISABLE_UPDATE_CHECK: '1' };
+let lastStderr = '';
+// A PowerShell 7 module search path must not contaminate Windows PowerShell 5.1.
+if (windows) delete env.PSModulePath;
 function run(command, args, timeout = 600000) {
   const result = spawnSync(command, args, { cwd: root, env, encoding: 'utf8', timeout,
     maxBuffer: 8 * 1024 * 1024, windowsHide: true, shell: false });
   if (result.error || result.status !== 0) throw new Error(
     `${command} failed: ${result.error?.message || result.status}\n${result.stdout || ''}\n${result.stderr || ''}`);
+  lastStderr = result.stderr || '';
   return result.stdout.trim();
 }
 try {
@@ -39,7 +43,9 @@ try {
     ? run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `& $env:ZC_TEST_LAUNCHER ${args.join(' ')}; exit $LASTEXITCODE`], 30000)
     : run(launcher, args, 30000);
   assert.equal(launch(['--version']), VERSION);
-  assert.match(launch(['demo', '--plain']), /OFFLINE DEMO/);
+  const demo = launch(['demo', '--plain']);
+  assert.match(demo, /offline interaction preview/);
+  assert.match(lastStderr, /OFFLINE DEMO/);
   const diagnostic = JSON.parse(launch(['doctor', '--json']));
   assert.equal(diagnostic.checks.find(c => c.name === 'runtime')?.ok, true);
   assert.equal(diagnostic.checks.find(c => c.name === 'authentication')?.ok, null);

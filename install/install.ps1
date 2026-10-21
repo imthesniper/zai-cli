@@ -3,6 +3,13 @@ param(
     [switch]$AddPath
 )
 $ErrorActionPreference = 'Stop'
+# Use .NET for checksum verification and extraction, independent of PSModulePath.
+function Get-Sha256([string]$Path) {
+    $Algorithm = [Security.Cryptography.SHA256]::Create()
+    $Stream = [IO.File]::OpenRead($Path)
+    try { return ([BitConverter]::ToString($Algorithm.ComputeHash($Stream))).Replace('-', '').ToLowerInvariant() }
+    finally { $Stream.Dispose(); $Algorithm.Dispose() }
+}
 $ConfigChanged = $false
 $Committed = $false
 $PowerShellShimMoved = $false
@@ -26,7 +33,7 @@ try {
         $Matches = @(Get-Content -LiteralPath $Manifest | Where-Object { $_ -match ('^[a-fA-F0-9]{64}\s+' + [regex]::Escape($Name) + '$') })
         if ($Matches.Count -ne 1) { throw 'Package checksum entry is missing or ambiguous.' }
         $Expected = ($Matches[0] -split '\s+')[0]
-        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $Package).Hash -ne $Expected) { throw 'Package checksum mismatch.' }
+        if ((Get-Sha256 $Package) -ne $Expected) { throw 'Package checksum mismatch.' }
     }
     if (!(Test-Path -LiteralPath $Node)) {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -37,8 +44,9 @@ try {
         $Match = @($Sums -split "`n" | Where-Object { $_.Trim() -match ('^[a-fA-F0-9]{64}\s+' + [regex]::Escape("$EngineName.zip") + '$') })
         if ($Match.Count -ne 1) { throw 'Node checksum entry is missing or ambiguous.' }
         $Expected = ($Match[0] -split '\s+')[0]
-        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $Zip).Hash -ne $Expected) { throw 'Node checksum mismatch.' }
-        Expand-Archive -LiteralPath $Zip -DestinationPath $Stage
+        if ((Get-Sha256 $Zip) -ne $Expected) { throw 'Node checksum mismatch.' }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::ExtractToDirectory($Zip, $Stage)
         if (Test-Path -LiteralPath $Engine) { throw 'An incomplete engine directory exists. It was not overwritten.' }
         Move-Item -LiteralPath (Join-Path $Stage $EngineName) -Destination $Engine
     }

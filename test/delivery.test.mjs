@@ -35,3 +35,18 @@ test('CI package installation and artifact name match the current package versio
   const expected = `striking-lions-zc-${VERSION}.tgz`;
   assert.equal(ci.split(expected).length - 1, 2);
 });
+test('distribution lock pins each runtime dependency to a verified HTTPS npm archive', async () => {
+  const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  const lock = JSON.parse(await readFile(join(root, 'npm-shrinkwrap.json'), 'utf8'));
+  assert.equal(lock.version, VERSION); assert.equal(lock.lockfileVersion, 3);
+  assert.deepEqual(lock.packages[''].dependencies, pkg.dependencies);
+  assert.equal(lock.packages['node_modules/zcode-app-cli'].version, pkg.dependencies['zcode-app-cli']);
+  const entries = Object.entries(lock.packages).filter(([name]) => name);
+  assert.equal(entries.length, 5);
+  for (const [name, value] of entries) {
+    assert.equal(new URL(value.resolved).origin, 'https://registry.npmjs.org', name);
+    assert.match(value.integrity, /^sha512-[A-Za-z0-9+/]{86}==$/, name);
+    assert.ok(!value.link && !value.hasInstallScript, name);
+    for (const dependency of Object.keys(value.dependencies || {})) assert.ok(lock.packages[`node_modules/${dependency}`], dependency);
+  }
+});
