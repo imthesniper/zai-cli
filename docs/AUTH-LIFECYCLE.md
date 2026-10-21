@@ -34,7 +34,7 @@ node scripts/auth-lifecycle-check.mjs --model 'account:zai-individual-coding-pla
 
 By default, the program generates a **fresh Z.ai authorization URL in your own terminal** twice on a successful full lifecycle. After the first login, the test first checks a response through ZC's **guarded native-stream backend** (a control path using the upstream public headless client), then checks the default **native app-server backend** in its normal guarded (\`ask\`) mode using the same account and temporary profile. This removes the earlier confounder where the control ran guarded while app-server ran read-only/plan. The native check has a separate phase probe, which reports startup, catalog, selection, request, and completion without returning raw logs. If the control succeeds but native fails, this isolates an integration problem. It does not silently change your normal ZC backend.
 
-After successful account checks, the test **deletes only the redirected credentials file in the disposable profile** and tests whether a new request is denied. The pinned upstream public CLI does not document a `logout` command, so this tests local sign-out, **not remote token or OAuth-session revocation**. Then a second login checks whether signing in again restores access. The test clears the disposable profile and deletes it.
+After successful account checks, the test **deletes only the redirected credentials file in the disposable profile**. It then verifies three independent facts: the file is absent, a responsive account-model catalog no longer offers the model as usable, and the official headless client cannot complete an account-backed request. The pinned upstream CLI does not document a `logout` command, so this tests local access loss, **not remote token or OAuth-session revocation**. An unclassified exit code alone is not a successful sign-out check. A second login then tests restored access, and the complete test deletes the disposable profile.
 
 The script uses a new private temporary directory, overriding the login, provider, user settings, session, and home paths for subprocesses. It strips common inherited credentials. This isolation follows the public ZCode CLI environment-variable contract; it is **not an OS security sandbox**. Run under an unprivileged user and avoid untrusted plugins or hooks. It does not intentionally touch your existing `~/.zcode` account, project files, or conversation histories.
 
@@ -125,3 +125,18 @@ On POSIX, this uses `~/.local/state/zc-auth-lifecycle-profile`, requiring it to 
 **Security tradeoff:** `--keep-on-failure` deliberately stores credentials on disk between test runs. It is opt-in, intended for a trusted, unprivileged, single-user VPS. Do not use it on a shared or untrusted host. Inspect and securely delete the named test directory after diagnosis if you do not complete a successful cleanup. The normal `~/.zcode` account remains separate.
 
 Without the flag, the test keeps its previous behavior: it creates a temporary isolated directory and deletes it at exit, including after failure. The CLI never performs server-side OAuth revocation on your behalf. A successful logout/re-login cycle does **not** establish token-expiration renewal.
+
+
+## Continue after a previously confirmed local sign-out
+
+If you ran the earlier test with `--keep-on-failure`, and it reached the local credential deletion but stopped at `UNCLASSIFIED_EXIT`, the **isolated profile remains on your VPS with credentials absent**. Instead of repeating login 1 and the first two successful authenticated requests, update your checkout and run:
+
+```bash
+node scripts/auth-lifecycle-check.mjs --keep-on-failure --resume-after-logout
+```
+
+This is an explicit **continuation**, not an independent full lifecycle test. It requires the previous private profile and provider-model configuration to exist, and refuses to continue if the redirected credentials file still exists. It verifies the missing-credential condition via the native app-server's catalog-only request (no inference), checks a headless account request cannot complete, asks for **login 2** and confirms a fresh authenticated request through default native. On full success it clears the temporary credentials and profile. Combine its output with the preceding run's positive checks when assessing the end-to-end lifecycle.
+
+The catalog-only check makes no model-selection mutation and sends no model prompt. The negative result must be supported by missing credentials **and** a healthy server catalog without usable account access; an arbitrary process exit is not proof of logout. Even after success, this is *local credential removal*, not revocation of Z.ai's remote tokens or browser sessions. It is **not** evidence of automatic credential renewal following expiry.
+
+If the prior profile was already deleted, start the regular test instead. Never paste token files, OAuth redirects or authorization URLs into chat.
