@@ -30,10 +30,23 @@ test('CI defines all three OS targets and both Node target lines', async () => {
   for (const expected of ['ubuntu-latest', 'macos-latest', 'windows-latest', '24.14.0', '24.x', 'npm run check', 'npm pack', 'zc demo --plain']) assert.ok(ci.includes(expected));
   assert.ok(ci.includes('contents: read')); assert.ok(!ci.includes('secrets.'));
 });
-test('CI package installation and artifact name match the current package version', async () => {
+test('CI package installation and every release-artifact reference match the current package version', async () => {
   const ci = await readFile(join(root, '.github/workflows/ci.yml'), 'utf8');
-  const expected = `striking-lions-zc-${VERSION}.tgz`;
-  assert.equal(ci.split(expected).length - 1, 2);
+  const names = [...ci.matchAll(/striking-lions-zc-(\\d+\\.\\d+\\.\\d+)\\.tgz/g)].map(match => match[1]);
+  assert.ok(names.length >= 2, 'The installer and CI must name the tarball.');
+  for (const version of names) assert.equal(version, VERSION, 'CI references a stale tarball version.');
+});
+test('GitHub public preview is CI-gated and cannot silently replace an existing release', async () => {
+  const ci = await readFile(join(root, '.github/workflows/ci.yml'), 'utf8');
+  assert.ok(ci.includes("startsWith(github.event.head_commit.message, 'release: ZC v0.2.0 public preview')"));
+  assert.ok(ci.includes('needs: [verify, isolated_live_image, dependencies, distribution]'));
+  assert.ok(ci.includes('contents: write'));
+  assert.ok(ci.includes('gh release view v0.2.0'));
+  assert.ok(ci.includes('git ls-remote --tags --exit-code'));
+  assert.ok(ci.includes('--target "$GITHUB_SHA"'));
+  assert.ok(ci.includes('--notes-file docs/releases/v0.2.0.md'));
+  assert.ok(ci.includes('--prerelease'));
+  assert.ok(!ci.includes('npm publish'));
 });
 test('distribution lock pins each runtime dependency to a verified HTTPS npm archive', async () => {
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
