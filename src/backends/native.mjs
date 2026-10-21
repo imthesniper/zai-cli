@@ -186,9 +186,12 @@ export class NativeBackend {
     else this.active.finish();
   }
   matchesActive(event) { return this.active?.monitor.matches(event) === true; }
-  async inspect() {
+  async inspect({ timeoutMs = 15000 } = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 15000) {
+      throw new Error('Inspect timeout must be between 1000 and 15000 ms.');
+    }
     if (!this.rpc || this.rpc.closed) throw new Error('Runtime disconnected. Use /reconnect.');
-    const snapshot = await this.rpc.request('session/read', { sessionId: this.session.sessionId }, { timeoutMs: 15000 });
+    const snapshot = await this.rpc.request('session/read', { sessionId: this.session.sessionId }, { timeoutMs });
     this.validateSnapshot(snapshot);
     const activity = nativeActivity(snapshot);
     return { sessionId: this.session.sessionId, status: activity.status,
