@@ -116,10 +116,13 @@ not prove that the native runtime failed to cancel a task.
 
 The revised test derives activity from the current protocol, verifies a shell
 tool actually started, requires an acknowledged `session/stop` request, and
-waits for two successive authoritative idle state reads after abortion. It
-also reports INCONCLUSIVE if the shell never started, an approval was denied,
-the turn finished before cancellation, the stop was not acknowledged, or
-runtime state could not be verified. **No PASS is inferred from the AbortError
+waits for two successive authoritative idle state reads after abortion. If
+the runtime asks for a tool-specific permission, **only an exact `sleep 45`
+Bash invocation** is eligible for a one-time approval, with no background
+execution, sandbox disablement or additional shell commands. All other
+shell and full-access requests are denied. The test reports INCONCLUSIVE if
+the shell never started, the turn finished before cancellation, the stop
+was not acknowledged, or runtime state could not be verified. **No PASS is inferred from the AbortError
 or the stop RPC acknowledgment alone.**
 
 ### Retest cancellation only
