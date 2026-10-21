@@ -27,7 +27,14 @@
 - Paged append-only visible transcript archive with search and full archived export.
 - High-contrast light/dark palettes, terminal-aware auto theme, formatted tables, tool cards, and a bordered composer.
 - Per-project last-session/model preferences, `zc resume`, `/status`, `/reconnect`, and in-interface `/login`.
-- Local fixture-based validation only; live provider and target-platform release testing remain separate.
+- The original integration was fixture-tested; live account-backed behavior requires separately recorded evidence and is not implied by CI.
+
+### Authentication validation update, 2026-10-21
+
+- Operator-observed Linux VPS tests confirmed initial Z.ai OAuth, a successful `native-stream` control request, and two consecutive account-backed GLM-5.3 responses from the default `native` backend.
+- A continuation confirmed that local removal of the isolated credentials blocked account-model access, and a second OAuth login restored authenticated `native` requests. The temporary test credentials were cleared afterward.
+- These results span two runs, including a test-harness update; they are not a single continuous CI or production-load test. [Release readiness](docs/RELEASE-READINESS.md) records the exact boundary.
+- **Not yet verified:** actual token-expiry renewal, remote OAuth revocation, multi-hour stability, and live write/deny/cancel/resume behavior.
 
 ## 0.1.2 - 2026-10-19
 
