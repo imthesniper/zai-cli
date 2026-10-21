@@ -258,6 +258,7 @@ async function main() {
     const observation = { turnStarted: false, toolStarted: false,
       stopSent: false, stopAcknowledged: false };
     let activeTurnId;
+    const toolNames = new Map();
     const sessionIdForCancel = resumeApp.session.sessionId;
     // Only metadata from the current root turn is observed. No tool inputs,
     // prompt text, model output, token values or protocol payloads are logged.
@@ -265,15 +266,21 @@ async function main() {
       if (phase !== 'cancel' || method !== 'session/event' ||
           item?.sessionId !== sessionIdForCancel) return;
       const inputId = resumeApp.active?.inputId;
-      if (item.type === 'turn.started' && inputId &&
-          item.payload?.inputId === inputId) {
+      const monitor = resumeApp.active?.monitor;
+      if (item.type === 'turn.started' && item.turnId &&
+          ((inputId && (item.payload?.inputId === inputId ||
+            item.payload?.queryId === inputId)) ||
+            (monitor?.started === true && monitor.turnId === item.turnId))) {
         activeTurnId = item.turnId;
         observation.turnStarted = true;
       }
       if (activeTurnId && item.turnId === activeTurnId &&
-          item.type === 'tool.updated' && item.payload?.kind === 'started' &&
-          /^(Bash|Shell|Exec)$/i.test(String(item.payload?.toolName || ''))) {
-        observation.toolStarted = true;
+          item.type === 'tool.updated' && item.payload?.toolCallId) {
+        const callId = item.payload.toolCallId;
+        if (typeof item.payload.toolName === 'string') toolNames.set(callId, item.payload.toolName);
+        const name = toolNames.get(callId);
+        if (item.payload.kind === 'started' &&
+            /^(Bash|Shell|Exec)$/i.test(String(name || ''))) observation.toolStarted = true;
       }
     });
     const request = resumeApp.rpc.request.bind(resumeApp.rpc);
@@ -302,7 +309,8 @@ async function main() {
       wait(12000).then(() => ({ kind: 'unconfirmed' })),
     ]);
     const idleConfirmed = observation.stopAcknowledged ?
-      await awaitNativeCancellationIdle(() => resumeApp.inspect()) : false;
+      await awaitNativeCancellationIdle(() => resumeApp.inspect({ timeoutMs: 1500 }),
+        { maxChecks: 10, intervalMs: 400 }) : false;
     const verdict = cancellationVerdict({
       ...observation,
       aborted: outcome.kind === 'aborted',
