@@ -25,7 +25,7 @@ Install into your own directory, without `sudo`:
 ```bash
 git clone https://github.com/imthesniper/zai-cli.git
 cd zai-cli
-npm install --ignore-scripts --no-audit --no-fund
+npm ci --ignore-scripts --no-audit --no-fund
 npm run check
 npm pack
 npm install --global --ignore-scripts --prefix "$HOME/.local" ./striking-lions-zc-0.2.0.tgz
@@ -42,7 +42,7 @@ Use Windows Terminal with PowerShell, Git, and Node.js **24.14 or newer**. The `
 ```powershell
 git clone https://github.com/imthesniper/zai-cli.git
 Set-Location zai-cli
-npm.cmd install --ignore-scripts --no-audit --no-fund
+npm.cmd ci --ignore-scripts --no-audit --no-fund
 npm.cmd run check
 npm.cmd pack
 npm.cmd install --global --ignore-scripts .\striking-lions-zc-0.2.0.tgz
@@ -209,7 +209,7 @@ Direct API access is a separate opt-in: `zc config backend zai` and a securely s
 Development and release checks:
 
 ```bash
-npm install --ignore-scripts --no-audit --no-fund
+npm ci --ignore-scripts --no-audit --no-fund
 npm run check
 node scripts/verify-runtime.mjs
 python3 scripts/terminal-smoke.py  # POSIX only, synthetic model/runtime
