@@ -1,6 +1,12 @@
 # Release readiness
 
-Release: ZC 0.2.0. Review date: October 21, 2026.
+Release: ZC 0.2.0 **public preview**. Review date: October 21, 2026. This release is not labeled stable or audited.
+
+## Public distribution decision
+
+The maintainer elected to publish **ZC Workbench v0.2.0 as a public GitHub prerelease**, making its limits clear rather than waiting for every stable-production gate. The release includes a checked installer ZIP, application tarball, SHA-256 download manifest and public documentation. It is not an npm publication, a code-signed binary, an audited operating-system sandbox or proof of automatic token-expiry renewal.
+
+The distribution workflow requires the repository's full Quality checks before publishing the explicit release commit and refuses to replace an existing tag. The GitHub prerelease is intended for users who understand guarded-mode tool execution, subscribe to a supported Z.ai model, and can evaluate this preview in a disposable project. The remaining gates below are not waived for a future **stable** release.
 
 ## Evidence
 
@@ -92,4 +98,4 @@ terminal compatibility has been established.
 
 Earlier user sessions demonstrated account-backed file reads, follow-up history, resumed history, and native shell activity in 0.1.x. They do not establish these properties for every platform or every later build.
 
-A repository push, a green CI matrix, and a completed model turn are different facts. This release remains an integration release until the outstanding live gates have evidence. There is no claim of an npm publication, code signing, unlimited subscription access, or unattended uptime.
+A repository push, a green CI matrix, and a completed model turn are different facts. This release is an explicitly labeled **public integration preview** until the remaining stable-release gates have evidence. There is no claim of an npm publication, code signing, unlimited subscription access, or unattended uptime.
