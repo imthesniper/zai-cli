@@ -32,7 +32,7 @@ test('CI defines all three OS targets and both Node target lines', async () => {
 });
 test('CI package installation and every release-artifact reference match the current package version', async () => {
   const ci = await readFile(join(root, '.github/workflows/ci.yml'), 'utf8');
-  const names = [...ci.matchAll(/striking-lions-zc-(\\d+\\.\\d+\\.\\d+)\\.tgz/g)].map(match => match[1]);
+  const names = [...ci.matchAll(/striking-lions-zc-(\d+\.\d+\.\d+)\.tgz/g)].map(match => match[1]);
   assert.ok(names.length >= 2, 'The installer and CI must name the tarball.');
   for (const version of names) assert.equal(version, VERSION, 'CI references a stale tarball version.');
 });
