@@ -4,13 +4,15 @@ import { tmpdir } from 'node:os';
 import { mkdtemp, lstat, rm, symlink, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolve } from 'node:path';
-import { isolatedEnv, parseOptions, modelDefault, classify, formatNativePhase, prepareReusableProfile } from '../scripts/auth-lifecycle-check.mjs';
+import { isolatedEnv, parseOptions, modelDefault, classify, formatNativePhase, prepareReusableProfile, localLogoutEvidence } from '../scripts/auth-lifecycle-check.mjs';
 
 test('live authentication test requires a well-formed explicit provider/model and bounded wait', () => {
   assert.equal(parseOptions([]).model, modelDefault);
   assert.equal(parseOptions(['--delay-seconds','60']).delaySeconds, 60);
   assert.equal(parseOptions(['--keep-on-failure']).keepOnFailure, true);
   assert.equal(parseOptions([]).keepOnFailure, false);
+  assert.equal(parseOptions(['--keep-on-failure','--resume-after-logout']).resumeAfterLogout, true);
+  assert.throws(() => parseOptions(['--resume-after-logout']), /requires --keep-on-failure/);
   for (const args of [['--delay-seconds', '-1'], ['--delay-seconds', '3601'], ['--model','garbage'], ['--unsafe']]) {
     assert.throws(() => parseOptions(args));
   }
@@ -83,4 +85,37 @@ test('reusable auth profile rejects a symlink in place of the profile directory'
   await mkdir(other, { mode: 0o700 });
   await symlink(other, join(state, 'zc-auth-lifecycle-profile'));
   await assert.rejects(prepareReusableProfile(home), /must be a user-owned 0700 directory/);
+});
+
+test('local sign-out requires missing credential, healthy catalog without account model and failed request', () => {
+  const denied = {code:1,timedOut:false,output:'Generic upstream runtime error'};
+  const catalog = {ok:true,modelAdvertised:false};
+  assert.deepEqual(localLogoutEvidence({
+    credentialsMissing:true,catalog,denied,classification:'UNCLASSIFIED_EXIT'
+  }), {pass:true,reason:'LOCAL_ACCOUNT_ACCESS_BLOCKED'});
+  // An exit code 1 by itself is never accepted as authentication denial.
+  for (const changes of [
+    {credentialsMissing:false},
+    {catalog:{ok:false,modelAdvertised:null}},
+    {catalog:{ok:true,modelAdvertised:true}},
+    {denied:{code:0,timedOut:false,output:'ZC_AUTH_LIFECYCLE_OK'}},
+    {denied:{code:1,timedOut:true,output:''}},
+    {classification:'RUNTIME_DISCONNECTED'},
+    {classification:'RUNTIME_TIMEOUT'},
+  ]) {
+    const result = localLogoutEvidence({
+      credentialsMissing:true,catalog,denied,classification:'UNCLASSIFIED_EXIT',
+      ...changes,
+    });
+    assert.equal(result.pass,false,JSON.stringify(changes));
+  }
+});
+test('local logout result reports fixed reason and never includes raw exit text', () => {
+  const evidence = localLogoutEvidence({
+    credentialsMissing:true,catalog:{ok:true,modelAdvertised:false},
+    denied:{code:1,timedOut:false,output:'Bearer extremely-sensitive-key'},
+    classification:'UNCLASSIFIED_EXIT',
+  });
+  assert.deepEqual(evidence,{pass:true,reason:'LOCAL_ACCOUNT_ACCESS_BLOCKED'});
+  assert.doesNotMatch(JSON.stringify(evidence),/extremely-sensitive-key/);
 });

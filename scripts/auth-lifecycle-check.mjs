@@ -19,16 +19,19 @@ const marker = 'ZC_AUTH_LIFECYCLE_OK';
 export const modelDefault = 'account:zai-individual-coding-plan/GLM-5.3';
 
 export function parseOptions(argv) {
-  let model = modelDefault, delaySeconds = 0, keepOnFailure = false;
+  let model = modelDefault, delaySeconds = 0, keepOnFailure = false, resumeAfterLogout = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--model' && argv[i + 1]) model = argv[++i];
     else if (argv[i] === '--delay-seconds' && argv[i + 1]) delaySeconds = Number(argv[++i]);
     else if (argv[i] === '--keep-on-failure') keepOnFailure = true;
-    else throw new Error('Usage: node scripts/auth-lifecycle-check.mjs [--model provider/model] [--delay-seconds 0..3600] [--keep-on-failure]');
+    else if (argv[i] === '--resume-after-logout') resumeAfterLogout = true;
+    else throw new Error('Usage: node scripts/auth-lifecycle-check.mjs [--model provider/model] [--delay-seconds 0..3600] [--keep-on-failure] [--resume-after-logout]');
   }
   if (!/^[A-Za-z0-9:_-]+\/[A-Za-z0-9._-]+$/.test(model) || model.length > 160) throw new Error('Invalid model ID');
   if (!Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 3600) throw new Error('Delay must be 0..3600 seconds');
-  return { model, delaySeconds, keepOnFailure };
+  if (resumeAfterLogout && !keepOnFailure) throw new Error('--resume-after-logout requires --keep-on-failure.');
+  if (resumeAfterLogout && delaySeconds) throw new Error('Delay is not supported when resuming a signed-out test.');
+  return { model, delaySeconds, keepOnFailure, resumeAfterLogout };
 }
 
 export function isolatedEnv(profile, base = process.env) {
@@ -89,6 +92,22 @@ export function formatNativePhase(phase) {
   ].join(' ');
 }
 
+/** Missing credentials plus an independently responsive native catalog that
+ * cannot offer this account model, and a failed headless request, corroborate
+ * local access loss. An arbitrary exit 1 on its own is never sufficient. */
+export function localLogoutEvidence({ credentialsMissing, catalog, denied, classification }) {
+  if (!credentialsMissing) return { pass: false, reason: 'CREDENTIAL_FILE_PRESENT' };
+  if (!catalog?.ok) return { pass: false, reason: 'ACCOUNT_CATALOG_UNVERIFIED' };
+  if (catalog.modelAdvertised) return { pass: false, reason: 'ACCOUNT_MODEL_STILL_AVAILABLE' };
+  if (!denied || denied.timedOut || denied.code === 0 || denied.output?.includes(marker)) {
+    return { pass: false, reason: 'REQUEST_NOT_CONFIRMED_BLOCKED' };
+  }
+  if (['TIMEOUT_OR_EXCESS_OUTPUT','RUNTIME_TIMEOUT','RUNTIME_DISCONNECTED','NATIVE_PROTOCOL_OR_RUNTIME_FAILURE'].includes(classification)) {
+    return { pass: false, reason: 'NON_AUTH_RUNTIME_FAILURE' };
+  }
+  return { pass: true, reason: 'LOCAL_ACCOUNT_ACCESS_BLOCKED' };
+}
+
 export async function prepareReusableProfile(home = homedir()) {
   if (process.platform === 'win32') throw new Error('--keep-on-failure is available on POSIX only.');
   const state = join(home, '.local', 'state');
@@ -123,7 +142,7 @@ function execute(script, args, env, cwd, interactive = false, timeoutMs = 180000
 }
 
 async function main() {
-  const { model, delaySeconds, keepOnFailure } = parseOptions(process.argv.slice(2));
+  const { model, delaySeconds, keepOnFailure, resumeAfterLogout } = parseOptions(process.argv.slice(2));
   if (!process.stdin.isTTY) throw new Error('Run from your interactive terminal. Do not run this live OAuth test in CI.');
   for (const path of [zc, zcode]) await access(path).catch(() => { throw new Error('First run: npm ci --ignore-scripts --no-audit --no-fund'); });
   const profile = keepOnFailure ? await prepareReusableProfile() : await mkdtemp(join(tmpdir(), 'zc-auth-lifecycle-'));
@@ -131,7 +150,15 @@ async function main() {
   const workspace = join(profile, 'workspace');
   await mkdir(workspace, { mode: 0o700, recursive: true });
   const env = isolatedEnv(profile);
-  const reuseExistingLogin = keepOnFailure && await lstat(env.ZCODE_CLI_CREDENTIALS_FILE).then(s => s.isFile(), () => false);
+  const credentialIsFile = () => lstat(env.ZCODE_CLI_CREDENTIALS_FILE).then(
+    file => file.isFile(), error => { if (error.code === 'ENOENT') return false; throw error; });
+  const reuseExistingLogin = keepOnFailure && await credentialIsFile();
+  if (resumeAfterLogout) {
+    if (reuseExistingLogin) throw new Error('The isolated test profile still has credentials; continuation requires a signed-out profile.');
+    const configExists = await lstat(env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE).then(
+      file => file.isFile(), error => { if (error.code === 'ENOENT') return false; throw error; });
+    if (!configExists) throw new Error('No prior isolated model configuration exists. Start the full test instead.');
+  }
   let allPassed = false;
   const results = [];
   const record = (step, pass, detail) => {
@@ -159,6 +186,15 @@ async function main() {
       '--cwd', workspace, '--backend', 'native-stream', '--mode', 'guarded',
       '--model', model, '--trust'], env, workspace);
   };
+  const catalogWithoutInference = async () => {
+    const result = await execute(nativeProbe, [model, workspace, 'ask', 'catalog-only'],
+      env, workspace, false, 60000);
+    let candidate;
+    try { candidate = JSON.parse(result.output.trim()); } catch { /* Never report raw output. */ }
+    const ok = result.code === 0 && !result.timedOut && candidate?.phase === 'model_catalog' &&
+      candidate?.category === 'CATALOG_CHECK' && typeof candidate?.modelAdvertised === 'boolean';
+    return { ok, modelAdvertised: ok ? candidate.modelAdvertised : null };
+  };
   const login = async label => {
     console.log('\nThe official Z.ai OAuth URL will be printed by your local runtime.');
     console.log('Open it privately, then return to this terminal. Never paste the link into chat.');
@@ -181,23 +217,33 @@ async function main() {
   try {
     console.log('LIVE ZC auth lifecycle test. This temporary profile has its own credentials, config, sessions, and HOME.');
     console.log('The test consumes model quota. It never submits your source files or runs shell tools.');
-    if (reuseExistingLogin) {
-      record('login 1', true, 'reusing isolated credentials, checked by the next account-backed request');
-    } else if (!await login('login 1')) return;
-    if (!await request('account access control through guarded native-stream', 'native-stream')) return;
-    if (!await request('initial authenticated request through default native')) return;
-    if (delaySeconds) {
-      console.log('Waiting ' + delaySeconds + ' seconds. Token expiry is not established by elapsed time alone.');
-      await new Promise(done => setTimeout(done, delaySeconds * 1000));
+    if (resumeAfterLogout) {
+      console.log('Continuing only the signed-out and re-login stages of the previously verified isolated test.');
+      console.log('No previous authenticated response is being claimed as part of this continuation run.');
+    } else {
+      if (reuseExistingLogin) {
+        record('login 1', true, 'reusing isolated credentials, checked by the next account-backed request');
+      } else if (!await login('login 1')) return;
+      if (!await request('account access control through guarded native-stream', 'native-stream')) return;
+      if (!await request('initial authenticated request through default native')) return;
+      if (delaySeconds) {
+        console.log('Waiting ' + delaySeconds + ' seconds. Token expiry is not established by elapsed time alone.');
+        await new Promise(done => setTimeout(done, delaySeconds * 1000));
+      }
+      if (!await request('subsequent authenticated request')) return;
+      if (!await logout('logout 1')) return;
     }
-    if (!await request('subsequent authenticated request')) return;
-    if (!await logout('logout 1')) return;
+    // Require independent evidence of absent local account access. An
+    // unexplained exit 1 is insufficient unless a healthy, unbound app-server
+    // also reports that this account model is not usable.
+    const credentialsMissing = !await credentialIsFile();
+    const catalog = await catalogWithoutInference();
     const denied = await probe('native-stream');
     const deniedReason = classify(denied.output, denied.timedOut);
-    const expectedDenial = ['UNAUTHORIZED', 'PROJECT_TOKEN_LOGIN_REQUIRED', 'MODEL_NOT_CONFIGURED', 'MODEL_UNAVAILABLE'].includes(deniedReason);
-    if (!record('request denied after temporary credential removal',
-      denied.code !== 0 && !denied.timedOut && expectedDenial,
-      denied.code === 0 ? 'UNEXPECTED_ACCESS' : deniedReason + ' (exit ' + denied.code + ')')) return;
+    const verdict = localLogoutEvidence({ credentialsMissing, catalog, denied, classification: deniedReason });
+    if (!record('request blocked after temporary credential removal', verdict.pass,
+      verdict.reason + ' catalogAvailable=' + (catalog.ok ? String(catalog.modelAdvertised) : 'unknown') +
+      ' streamExit=' + denied.code + ' streamReason=' + deniedReason)) return;
     if (!await login('login 2')) return;
     if (!await request('authenticated request after re-login')) return;
     if (!await logout('final isolated logout')) return;
@@ -211,7 +257,7 @@ async function main() {
       console.log('Temporary test profile disposed. Existing saved ZCode login was not intentionally logged out.');
     }
     console.log('SHARE ONLY THIS RESULT: ' + JSON.stringify(results));
-    if (results.length !== 9 || results.some(row => !row.pass)) process.exitCode = 1;
+    if (results.length !== (resumeAfterLogout ? 4 : 9) || results.some(row => !row.pass)) process.exitCode = 1;
   }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
