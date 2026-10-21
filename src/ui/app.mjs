@@ -7,7 +7,6 @@ import { stateDir, saveConfig } from '../config.mjs';
 import { writeJson, readJson, hash, redact, id, abortError, clean, width, takeCells } from '../util.mjs';
 import { runProcess, spawnProcess, killTree } from '../process.mjs';
 import { NativeBackend } from '../backends/native.mjs';
-import { parseNativeModel } from '../backends/native-contract.mjs';
 import { NativeStreamBackend } from '../backends/native-stream.mjs';
 import { ZaiBackend } from '../backends/zai.mjs';
 import { DemoBackend } from '../backends/demo.mjs';
@@ -126,10 +125,8 @@ export class TerminalApp {
     this.emit({ type: 'status', phase: 'connecting', detail: this.demo ? 'Starting offline demo' : 'Starting the runtime' });
     this.backend = createBackend({ cwd: this.cwd, config: this.config, demo: this.demo, emit: this.emit, ask: this.ask });
     try {
-      const startupModel = !resume && this.initialModel && this.config.backend === 'native' &&
-        !parseNativeModel(this.initialModel).options?.reasoningLevel ? this.initialModel : undefined;
-      const started = await this.backend.start(resume, startupModel ? { initialModel: startupModel } : undefined);
-      if (this.initialModel && this.config.backend === 'native' && !startupModel) {
+      const started = await this.backend.start(resume);
+      if (this.initialModel && this.config.backend === 'native') {
         await this.backend.setModel(this.initialModel, { allowUnlistedExact: true });
       }
       else if (started?.needsModel && started.models?.length) {
