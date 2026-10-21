@@ -6,8 +6,8 @@
  * It does NOT prove automatic refresh of an expired OAuth or project token.
  */
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, chmod, access, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdtemp, mkdir, chmod, access, rm, lstat } from 'node:fs/promises';
+import { tmpdir, homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,15 +19,16 @@ const marker = 'ZC_AUTH_LIFECYCLE_OK';
 export const modelDefault = 'account:zai-individual-coding-plan/GLM-5.3';
 
 export function parseOptions(argv) {
-  let model = modelDefault, delaySeconds = 0;
+  let model = modelDefault, delaySeconds = 0, keepOnFailure = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--model' && argv[i + 1]) model = argv[++i];
     else if (argv[i] === '--delay-seconds' && argv[i + 1]) delaySeconds = Number(argv[++i]);
-    else throw new Error('Usage: node scripts/auth-lifecycle-check.mjs [--model provider/model] [--delay-seconds 0..3600]');
+    else if (argv[i] === '--keep-on-failure') keepOnFailure = true;
+    else throw new Error('Usage: node scripts/auth-lifecycle-check.mjs [--model provider/model] [--delay-seconds 0..3600] [--keep-on-failure]');
   }
   if (!/^[A-Za-z0-9:_-]+\/[A-Za-z0-9._-]+$/.test(model) || model.length > 160) throw new Error('Invalid model ID');
   if (!Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 3600) throw new Error('Delay must be 0..3600 seconds');
-  return { model, delaySeconds };
+  return { model, delaySeconds, keepOnFailure };
 }
 
 export function isolatedEnv(profile, base = process.env) {
@@ -88,6 +89,22 @@ export function formatNativePhase(phase) {
   ].join(' ');
 }
 
+export async function prepareReusableProfile(home = homedir()) {
+  if (process.platform === 'win32') throw new Error('--keep-on-failure is available on POSIX only.');
+  const state = join(home, '.local', 'state');
+  const profile = join(state, 'zc-auth-lifecycle-profile');
+  await mkdir(state, { recursive: true, mode: 0o700 });
+  await mkdir(profile, { mode: 0o700 }).catch(error => {
+    if (error.code !== 'EEXIST') throw error;
+  });
+  const info = await lstat(profile);
+  if (!info.isDirectory() || (info.mode & 0o077) !== 0 ||
+      (typeof process.getuid === 'function' && info.uid !== process.getuid())) {
+    throw new Error('The isolated test profile must be a user-owned 0700 directory, not a link.');
+  }
+  return profile;
+}
+
 function execute(script, args, env, cwd, interactive = false, timeoutMs = 180000) {
   return new Promise((resolveRun, reject) => {
     const child = spawn(process.execPath, [script, ...args], {
@@ -106,14 +123,16 @@ function execute(script, args, env, cwd, interactive = false, timeoutMs = 180000
 }
 
 async function main() {
-  const { model, delaySeconds } = parseOptions(process.argv.slice(2));
+  const { model, delaySeconds, keepOnFailure } = parseOptions(process.argv.slice(2));
   if (!process.stdin.isTTY) throw new Error('Run from your interactive terminal. Do not run this live OAuth test in CI.');
   for (const path of [zc, zcode]) await access(path).catch(() => { throw new Error('First run: npm ci --ignore-scripts --no-audit --no-fund'); });
-  const profile = await mkdtemp(join(tmpdir(), 'zc-auth-lifecycle-'));
+  const profile = keepOnFailure ? await prepareReusableProfile() : await mkdtemp(join(tmpdir(), 'zc-auth-lifecycle-'));
   await chmod(profile, 0o700);
   const workspace = join(profile, 'workspace');
-  await mkdir(workspace, { mode: 0o700 });
+  await mkdir(workspace, { mode: 0o700, recursive: true });
   const env = isolatedEnv(profile);
+  const reuseExistingLogin = keepOnFailure && await lstat(env.ZCODE_CLI_CREDENTIALS_FILE).then(s => s.isFile(), () => false);
+  let allPassed = false;
   const results = [];
   const record = (step, pass, detail) => {
     results.push({ step, pass, detail });
@@ -162,7 +181,9 @@ async function main() {
   try {
     console.log('LIVE ZC auth lifecycle test. This temporary profile has its own credentials, config, sessions, and HOME.');
     console.log('The test consumes model quota. It never submits your source files or runs shell tools.');
-    if (!await login('login 1')) return;
+    if (reuseExistingLogin) {
+      record('login 1', true, 'reusing isolated credentials, checked by the next account-backed request');
+    } else if (!await login('login 1')) return;
     if (!await request('account access control through guarded native-stream', 'native-stream')) return;
     if (!await request('initial authenticated request through default native')) return;
     if (delaySeconds) {
@@ -179,10 +200,16 @@ async function main() {
       denied.code === 0 ? 'UNEXPECTED_ACCESS' : deniedReason + ' (exit ' + denied.code + ')')) return;
     if (!await login('login 2')) return;
     if (!await request('authenticated request after re-login')) return;
-    await logout('final isolated logout');
+    if (!await logout('final isolated logout')) return;
+    allPassed = true;
   } finally {
-    await rm(profile, { recursive: true, force: true, maxRetries: 3 });
-    console.log('Temporary test profile disposed. Existing saved ZCode login was not intentionally logged out.');
+    if (keepOnFailure && !allPassed) {
+      console.log('Isolated 0700 test profile retained for diagnosis at: ' + profile);
+      console.log('Treat this directory as sensitive account data. Reuse the same --keep-on-failure command or securely delete it when finished.');
+    } else {
+      await rm(profile, { recursive: true, force: true, maxRetries: 3 });
+      console.log('Temporary test profile disposed. Existing saved ZCode login was not intentionally logged out.');
+    }
     console.log('SHARE ONLY THIS RESULT: ' + JSON.stringify(results));
     if (results.length !== 9 || results.some(row => !row.pass)) process.exitCode = 1;
   }
