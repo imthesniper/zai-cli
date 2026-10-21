@@ -106,3 +106,37 @@ test('phase probe identifies matching model at startup without emitting selectio
   assert.equal(result.category,'SUCCESS');
   assert.equal('model' in result,false);
 });
+
+test('signed-out catalog-only probe does not submit prompts or mutate models', async () => {
+  let selects = 0, sends = 0;
+  const result = await runProbe({
+    cwd:process.cwd(),model,catalogOnly:true,
+    makeBackend:({config}) => ({
+      model:undefined,
+      interaction:async()=>{},
+      async start(){},
+      async models(){return [];},
+      async setModel(){selects++;throw new Error('must not select a model');},
+      async send(){sends++;throw new Error('must not send any prompt');},
+      async dispose(){},
+    }),
+  });
+  assert.equal(result.category,'CATALOG_CHECK');
+  assert.equal(result.phase,'model_catalog');
+  assert.equal(result.modelAdvertised,false);
+  assert.equal(result.responseVerified,false);
+  assert.equal(selects,0);
+  assert.equal(sends,0);
+});
+test('catalog-only probe does not mistake unavailable account model for usable access', async () => {
+  const result=await runProbe({cwd:process.cwd(),model,catalogOnly:true,makeBackend:()=>({
+    interaction:async()=>{},
+    async start(){},
+    async models(){return [{value:model,disabled:true,disabledReason:'Not authorized'}];},
+    async setModel(){throw new Error('No model mutation expected');},
+    async send(){throw new Error('No inference expected');},
+    async dispose(){},
+  })});
+  assert.equal(result.category,'CATALOG_CHECK');
+  assert.equal(result.modelAdvertised,false);
+});
