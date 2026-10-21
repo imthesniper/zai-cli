@@ -32,7 +32,7 @@ By default this uses the previously tested model `account:zai-individual-coding-
 node scripts/auth-lifecycle-check.mjs --model 'account:zai-individual-coding-plan/GLM-5.3'
 ```
 
-The program generates a **fresh Z.ai authorization URL in your own terminal** twice. After the first login, the test first checks a response through ZC's **guarded native-stream backend** (a control path using the upstream public headless client), then checks the default **native app-server backend** in its normal guarded (\`ask\`) mode using the same account and temporary profile. This removes the earlier confounder where the control ran guarded while app-server ran read-only/plan. The native check has a separate phase probe, which reports startup, catalog, selection, request, and completion without returning raw logs. If the control succeeds but native fails, this isolates an integration problem. It does not silently change your normal ZC backend.
+By default, the program generates a **fresh Z.ai authorization URL in your own terminal** twice on a successful full lifecycle. After the first login, the test first checks a response through ZC's **guarded native-stream backend** (a control path using the upstream public headless client), then checks the default **native app-server backend** in its normal guarded (\`ask\`) mode using the same account and temporary profile. This removes the earlier confounder where the control ran guarded while app-server ran read-only/plan. The native check has a separate phase probe, which reports startup, catalog, selection, request, and completion without returning raw logs. If the control succeeds but native fails, this isolates an integration problem. It does not silently change your normal ZC backend.
 
 After successful account checks, the test **deletes only the redirected credentials file in the disposable profile** and tests whether a new request is denied. The pinned upstream public CLI does not document a `logout` command, so this tests local sign-out, **not remote token or OAuth-session revocation**. Then a second login checks whether signing in again restores access. The test clears the disposable profile and deletes it.
 
@@ -54,7 +54,7 @@ A failing stage is a blocker, not permission to bypass authentication. Do not re
 
 ## Boundaries
 
-- Uses `zc exec` with the native backend, a temporary empty workspace, explicit model, and read-only policy, after an account control request through the guarded native-stream backend. The guarded stream backend is **not** a strict read-only sandbox; run this only in a disposable workspace.
+- Uses the native backend in guarded mode, a private empty workspace, and an explicit model, after an account control request through the guarded native-stream backend. All ZC permission prompts are denied. The guarded stream backend is **not** a strict read-only sandbox; run this only in a disposable workspace.
 - Does not test write approval, CLI OS isolation, or unattended execution
 - Does not reproduce automatic expiry by mocking elapsed time
 - Tests deletion of the temporary local credential file, not an official remote logout or revocation
@@ -82,7 +82,7 @@ The result may also include `modelAdvertised` and `providerHeaderRequests`. They
 
 ## Native catalog selection correction (candidate)
 
-The native UI now keeps the bare `providerId/modelId` reference when upstream also advertises individual reasoning levels. The upstream registry documents that an omitted reasoning level uses the default. Previously, ZC's catalog expansion dropped that valid bare reference.
+The native UI now keeps the bare `providerId/modelId` reference when upstream also advertises individual reasoning levels. The upstream display catalog has a default reasoning level, but its structured selection validator requires the reasoning level to be present. ZC's bare picker reference is an alias for the runtime-advertised default, not permission to send an incomplete structured selection.
 
 For an exact `--model` explicitly provided by the operator, ZC may ask the upstream app-server to validate that selection even if the frontend's projected picker omits it. This does not select a substitute model. It requires a matching `session/setModel` confirmation from the runtime **before** any model request. A runtime-advertised disabled model remains forbidden, and ordinary picker selection still requires catalog membership. A runtime rejection stops the test; it is not retried with a different backend or billed API.
 
@@ -102,12 +102,26 @@ ZC now skips a redundant `session/setModel` mutation **only when an authoritativ
 If the RPC rejects, the remaining error is in runtime validation or integration; no account credential is automatically replaced. If the RPC accepts but model selection still fails, investigate model projection/confirmation handling. These flags are local, fixed-schema diagnostics and do not include raw protocol frames.
 
 
-## Verified source-level alternative to the rejected model switch
+## Model selection investigation and current correction
 
-The isolated test on October 21 established that authentication and GLM-5.3 inference work in `native-stream`, and that the native app-server advertises GLM-5.3 but rejects a later `session/setModel` mutation. Those observations do **not** prove token expiration.
+The October 21 live tests established that an isolated Z.ai login can complete a GLM-5.3 request through the official headless native-stream client. In the default ZC app-server, GLM-5.3 appeared in the catalog, but `session/setModel` was rejected. A later experiment supplied the bare model in `session/create`; the live runtime rejected that call with RPC code `-32603` before establishing a session. That **create-time experiment is not the normal launch path anymore**.
 
-In the inspected upstream ZCode legacy-v1 protocol, `session/create` accepts an optional structured `model`. Its handler binds that initial selection during session creation, while `session/setModel` takes a different post-creation mutation path. This release therefore accepts an **explicitly requested bare provider/model reference** at native session startup and verifies the model from the returned session snapshot. It does not convert an existing resumed conversation into a new session or automatically retry an unsuccessful mutation. An explicitly requested reasoning suffix is not sent through the startup path, because the inspected handler formats the startup model as provider/model; the normal acknowledged setter is required to preserve an explicit reasoning level.
+Inspection of upstream `provider-registry-selection.ts` and `session-facade.ts` revealed a specific validation mismatch. Listing a model does not validate a structured selection. The structured `setModel` path invokes Registry validation, which can reject `reasoning-level-missing`. The earlier ZC request supplied only `providerId` and `modelId`, even though upstream publishes valid reasoning levels and a default level.
 
-The live test now calls `NativeBackend.start(undefined, { initialModel: model })` for this distinct path. It reports `initialModelSupplied`, `initialModelConfirmed`, and a bounded `rpcErrorCode` if the upstream protocol rejects the call. With an initial model accepted, `selectedAtStart` should be true and `setModelRpcSent` should be false. An RPC denial still stops the test without inventing a different model or sending a paid inference prompt.
+The current candidate fixes this by resolving an unsuffixed `provider/model` to the **runtime-advertised default reasoning level**, then submitting the full `{providerId, modelId, options: {reasoningLevel}}` structure through `session/setModel`. Explicit `$reasoningLevel` selections are passed unchanged. If the runtime advertises reasoning levels without a valid default, the unsuffixed model is marked unavailable and the user must pick an explicit listed level. ZC rejects any disabled model and never falls back to API-key billing.
 
-**This is a candidate integration correction, not a claim of successful live account-backed app-server inference.** Automated fixture checks cannot verify the customer's live token, model entitlement, request signing, or long-session token refresh. A new live test is necessary. The upstream `session/setModel` limitation remains for interactive model changes after a session already exists.
+Unit and subprocess tests include a strict fake app-server that lists GLM-5.3 but intentionally rejects bare structured selections and create-time model assignment. The corrected default launch must pass against this fixture before it can be released. **This does not prove that the real account-backed app-server or automatic token renewal works**. Only the next opt-in live test can establish real account inference.
+
+## Keep a diagnostic login on your VPS only if you explicitly choose to
+
+Previous iterations disposed of the temporary credential profile on each failed test, forcing another Z.ai OAuth authorization every time. To avoid that, you may opt into a **private persistent test profile**:
+
+```bash
+node scripts/auth-lifecycle-check.mjs --keep-on-failure
+```
+
+On POSIX, this uses `~/.local/state/zc-auth-lifecycle-profile`, requiring it to be a user-owned directory with mode `0700`. It keeps the isolated credentials if any test stage fails. Run the **same command** after pulling a repair to reuse that temporary account, rather than requesting login again. On complete success, the script clears its disposable test profile. The `SHARE ONLY THIS RESULT` output contains no credential paths or authentication tokens.
+
+**Security tradeoff:** `--keep-on-failure` deliberately stores credentials on disk between test runs. It is opt-in, intended for a trusted, unprivileged, single-user VPS. Do not use it on a shared or untrusted host. Inspect and securely delete the named test directory after diagnosis if you do not complete a successful cleanup. The normal `~/.zcode` account remains separate.
+
+Without the flag, the test keeps its previous behavior: it creates a temporary isolated directory and deletes it at exit, including after failure. The CLI never performs server-side OAuth revocation on your behalf. A successful logout/re-login cycle does **not** establish token-expiration renewal.
