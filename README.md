@@ -101,6 +101,12 @@ zc --plain                 # Line-oriented alternative to the full-screen interf
 
 On your first upgrade from an older preview, `zc resume` may open the session picker. Choose the existing conversation. Old prompts are not automatically resubmitted.
 
+## Verify account login, logout, and re-login
+
+To run an **optional, live authentication lifecycle test** without logging out your normal ZCode profile, see [authentication lifecycle testing](docs/AUTH-LIFECYCLE.md). It generates authorization links in your own terminal and uses an isolated test profile. The test makes actual model requests and consumes quota.
+
+This checks initial login, a second authenticated request, local logout and denial, then re-login. It does **not** certify automatic renewal after token expiration. Never send OAuth authorization links, callback codes, or credential files into an issue or chat.
+
 ## Permission modes and autonomous work
 
 **Default native mode is guarded.** The historical `ask` name in ZC maps to the runtime's guarded mode, which may run ordinary commands without asking and uses runtime rules for additional confirmations. It does not mean approval before every edit or shell command.
