@@ -68,7 +68,7 @@ test('native matcher accepts upstream default reasoning only when user omitted e
   assert.equal(matchesNativeModelSelection(undefined, selected), false);
 });
 
-test('zc exec --model binds account identity during create, without post-create setter', async t => {
+test('zc exec --model does not bypass a runtime that rejects post-create selection', async t => {
   const home = await mkdtemp(join(tmpdir(), 'zc-native-init-cli-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   const state = join(home, 'zc');
@@ -82,7 +82,7 @@ test('zc exec --model binds account identity during create, without post-create 
     '--model', selected, '--trust'
   ], { cwd: home, timeout: 20000, maxBytes: 16000,
     env: { ...process.env, ZC_HOME: state, ZAI_API_KEY: '' } });
-  assert.equal(result.code, 0, result.output);
-  assert.match(result.output, /Native initial model accepted/);
-  assert.doesNotMatch(result.output, /Fixture refuses post-create setModel/);
+  assert.equal(result.code, 1, result.output);
+  assert.match(result.output, /Fixture refuses post-create setModel/);
+  assert.doesNotMatch(result.output, /Native initial model accepted/);
 });
