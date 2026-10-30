@@ -9,7 +9,8 @@ import { formatDuration } from './duration.mjs';
 export { THEMES } from './theme.mjs';
 
 // Explicit palettes are WCAG-contrast-tested and owned by ui/theme.mjs.
-// Auto leaves the terminal's own canvas/foreground untouched.\nexport function painter(theme = 'auto', color = true, redactContent = true) {
+// Auto leaves the terminal's own canvas/foreground untouched.
+export function painter(theme = 'auto', color = true, redactContent = true) {
   const t = THEMES[theme] || THEMES.auto;
   return (text, role = 'text', bold = false, selected = false) => {
     const safe = redactContent ? redact(text) : clean(text);
