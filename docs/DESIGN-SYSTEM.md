@@ -35,7 +35,7 @@ do not change model execution or permissions.
 | Primary | `#EDF0F5` | `#1B2533` |
 | Secondary | `#B4BEC9` | `#586475` |
 | Tertiary | `#96A1AD` | `#647387` |
-| Border | `#8392A3` | `#7A8695` |
+| Border | `#8392A3` | `#627183` |
 | Accent | `#A0C4FF` | `#185EA4` |
 | Success | `#89D8B3` | `#18704A` |
 | Warning | `#F0C985` | `#875700` |
