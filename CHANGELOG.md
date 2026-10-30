@@ -18,6 +18,15 @@
 
 # Changelog
 
+## Unreleased - Cohesive themes and readable long-task timers
+
+- Replace the mismatched theme color pairings with semantic graphite and paper palettes; test readable contrast for all functional text roles.
+- Make `/theme` an interactive, reversible live preview with sample typography and status colors. Retain explicit theme commands.
+- Repair switching from mono to color without restarting, and honor terminal foreground/background in auto mode and the `NO_COLOR` environment variable.
+- Render task and tool timers as seconds, minutes, hours or days as appropriate; preserve elapsed time on narrow terminal widths.
+- Separate status and permission colors by meaning rather than tinting entire bars and borders. [Design and acceptance criteria](docs/DESIGN-SYSTEM.md).
+- These changes are post-v0.2.0 source improvements. The published v0.2.0 GitHub release has not been modified.
+
 ## Unreleased - Live tool activity improvements
 
 - Expose runtime-provided tool purpose labels, elapsed time, progress byte counts, and concise result facts inline during native workbench sessions.
