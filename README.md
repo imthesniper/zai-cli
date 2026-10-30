@@ -212,6 +212,8 @@ still responsible for actually performing and explaining their work.
 
 ## Sessions, long tasks, and recovery
 
+While the model is working, the status timer now uses **seconds, minutes, hours and days** (for example `42s`, `1m 05s`, `1h 02m`, `1d 03h`) rather than an endless seconds counter. Long tool durations share the same compact format. On narrow terminals, the timer takes priority over the long status description.
+
 The native backend monitors quiet turns with session-status and event-history queries rather than automatically stopping a task because no text arrived. A failed health check is shown as **uncertain**. It is not relabeled as a successful task, and a prompt is not automatically replayed.
 
 ```text
