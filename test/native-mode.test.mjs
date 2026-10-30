@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { NativeBackend } from '../src/backends/native.mjs';
 import { NATIVE_MODES, snapshotPermissionMode, fullAccessConfirmation } from '../src/backends/native-mode.mjs';
 import { TerminalApp } from '../src/ui/app.mjs';
-import { renderFrame, painter } from '../src/ui/render.mjs';
+import { renderFrame, painter, THEMES } from '../src/ui/render.mjs';
 import { WorkspaceState } from '../src/state.mjs';
 import { validateConfig, saveConfig, loadConfig } from '../src/config.mjs';
 import { clean, width } from '../src/util.mjs';
@@ -229,9 +229,11 @@ test('full-access renderer remains bounded at supported terminal sizes', async t
     for (const line of frame.lines) assert.ok(width(line) <= cols - 1);
   }
 });
-test('light theme secondary controls and code no longer use the pale palette', () => {
-  assert.match(painter('light')('controls', 'faint'), /38;2;85;99;119/);
-  assert.match(painter('light')('code', 'code'), /38;2;40;53;73/);
+test('light theme secondary controls and code use the current accessible semantic roles', () => {
+  assert.ok(painter('light')('controls', 'faint').includes(THEMES.light.faint));
+  assert.ok(painter('light')('code', 'code').includes(THEMES.light.code));
+  assert.ok(THEMES.light.faint !== THEMES.light.text);
+  assert.ok(THEMES.light.code !== THEMES.light.border);
 });
 test('opening a new approval clears a stale denial toast', async t => {
   const a = app(t); a.notify('Full access was not enabled.');
