@@ -449,7 +449,7 @@ export class TerminalApp {
     }
     if (key === 'enter') {
       const value = this.editor.text.trim(); if (!value) return;
-      if (this.busy && !['/help', '/quit', '/export', '/status', '/search', '/mouse'].includes(value.split(/\s/)[0])) { this.notify('A turn is running. Your draft is kept. Esc stops the turn.'); return; }
+      if (this.busy && !['/help', '/quit', '/export', '/status', '/search', '/mouse', '/theme'].includes(value.split(/\s/)[0])) { this.notify('A turn is running. Your draft is kept. Esc stops the turn.'); return; }
       if (value.startsWith('/')) { this.editor.remember(); void this.command(value); }
       else if (!this.backend) this.notify('No runtime is connected. Run /new to retry, or /quit then zc setup.');
       else if (this.backend.needsModel) { void this.command('/model'); }
@@ -500,9 +500,6 @@ export class TerminalApp {
       if (name === '/search') { this.openSearch(value || ''); return; }
       if (name === '/mouse') { if (!['on', 'off'].includes(value)) throw new Error('Use /mouse on or /mouse off.'); this.screen.setMouse(value === 'on'); this.notify(value === 'on' ? 'Mouse editing and scrolling enabled.' : 'Mouse released to the terminal. PgUp/PgDn still scroll the conversation.'); return; }
       if (name === '/export') { await this.export(value); return; }
-      if (this.busy) throw new Error('Stop the running turn before changing this setting.');
-      if (name === '/login') { await this.signIn(); return; }
-      if (name === '/reconnect') { const sessionId = this.state.sessionId; if (!sessionId) throw new Error('No saved session is selected. Use /sessions.'); await this.work(() => this.connect(sessionId)); return; }
       if (name === '/theme') {
         if (!value) { this.openThemePicker(); return; }
         if (!['auto', 'dark', 'light', 'mono'].includes(value)) {
@@ -519,6 +516,10 @@ export class TerminalApp {
         this.schedule();
         return;
       }
+      if (this.busy) throw new Error('Stop the running turn before changing this setting.');
+      if (name === '/login') { await this.signIn(); return; }
+      if (name === '/reconnect') { const sessionId = this.state.sessionId; if (!sessionId) throw new Error('No saved session is selected. Use /sessions.'); await this.work(() => this.connect(sessionId)); return; }
+
       if (name === '/new' || name === '/resume') {
         if (name === '/resume' && !value) throw new Error('Use /sessions or /resume followed by an exact session ID.');
         await this.work(() => this.connect(name === '/resume' ? value : undefined)); return;
