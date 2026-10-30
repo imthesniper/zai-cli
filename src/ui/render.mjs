@@ -148,12 +148,24 @@ export function renderFrame(app, columns, terminalRows, color = true) {
   const wrapLine = value => color && theme !== 'mono' && base ? `\x1b[${base}m${' '.repeat(margin)}${value}\x1b[${base}m${' '.repeat(Math.max(0, cols - margin - width(value)))}\x1b[0m` : ' '.repeat(margin) + value;
   const line = (text = '', role = 'text', bold = false) => wrapLine(paint(truncate(text, contentWidth), role, bold));
   const pair = (left, right) => { right = truncate(right, Math.max(0, contentWidth - 8)); left = truncate(left, Math.max(1, contentWidth - width(right) - 2)); return left + ' '.repeat(Math.max(1, contentWidth - width(left) - width(right))) + right; };
+  // Mixed semantic roles within a status line avoid coloring the whole
+  // interface blue or treating guarded and full-access as equivalent states.
+  const semanticPair = (left, leftRole, right, rightRole, leftBold = false) => {
+    const tail = truncate(right, Math.max(0, contentWidth - 8));
+    const head = truncate(left, Math.max(1, contentWidth - width(tail) - 2));
+    const space = ' '.repeat(Math.max(1, contentWidth - width(head) - width(tail)));
+    return wrapLine(paint(head, leftRole, leftBold) + paint(space, 'text') + paint(tail, rightRole));
+  };
   if (height < 14 || columns < 36) {
     const small = ['ZC', 'Resize to at least 36 x 14.', 'Ctrl+C twice to exit.'].slice(0, height).map(s => paint(truncate(s, cols), 'text'));
     while (small.length < height) small.push(''); return { lines: small, cursor: null };
   }
   const path = app.cwd.startsWith(homedir()) ? '~' + app.cwd.slice(homedir().length) : app.cwd;
-  const frame = [line(pair(`ZC  ${basename(app.cwd)}${app.branch ? '  [' + app.branch + ']' : ''}`, `v${VERSION}`), 'accent', true), line(path, 'muted'), line('─'.repeat(contentWidth), 'border')];
+  const frame = [
+    semanticPair(`ZC  ${basename(app.cwd)}${app.branch ? '  [' + app.branch + ']' : ''}`, 'text', `v${VERSION}`, 'faint', true),
+    line(path, 'muted'),
+    line('─'.repeat(contentWidth), 'border'),
+  ];
   const editor = layoutEditor(app.editor, contentWidth - 4), maxEdit = Math.min(10, Math.max(1, Math.floor(height / 3) - 1));
   app.editorStart = Math.max(0, Math.min(app.editorStart || 0, Math.max(0, editor.rows.length - maxEdit)));
   if (editor.cursor.row < app.editorStart) app.editorStart = editor.cursor.row;
@@ -211,10 +223,18 @@ export function renderFrame(app, columns, terminalRows, color = true) {
   const elapsed = app.busy && app.turnStarted ? ` · ${formatDuration(Math.max(0, Date.now() - app.turnStarted))}` : '';
   const modeLabel = app.demo ? 'OFFLINE DEMO' : fullAccess ? 'YOLO / FULL ACCESS' : unconfirmed ? 'MODE UNCONFIRMED' : app.config.backend === 'native-stream' ? 'guarded, no approvals' : app.state.runtimeMode === 'guarded' ? 'GUARDED' : String(mode).toUpperCase();
   const scrollLabel = app.scroll || app.historyEntries ? ' · HISTORY  Ctrl+End: live' : '';
-  frame.push(line(pair(status + elapsed, modeLabel + scrollLabel), fullAccess || unconfirmed || ['uncertain', 'disconnected'].includes(phase) ? 'warn' : app.busy ? 'accent' : 'muted'));
+  const statusRole = ['uncertain', 'disconnected'].includes(phase) ? 'error' : app.busy ? 'accent' : 'success';
+  const modeRole = fullAccess || unconfirmed ? 'warn' : app.demo ? 'muted' : 'success';
+  frame.push(semanticPair(status + elapsed, statusRole, modeLabel + scrollLabel, modeRole));
   const selected = app.editor.selection ? ` · ${app.editor.selection[1] - app.editor.selection[0]} selected` : '';
   const draftLabel = ` Prompt${editor.rows.length > 1 ? ' · ' + (editStart + 1) + '-' + Math.min(editStart + editRows.length, editor.rows.length) + '/' + editor.rows.length : ''}${selected} `;
-  frame.push(line('╭─' + truncate(draftLabel, contentWidth - 4) + '─'.repeat(Math.max(0, contentWidth - width(draftLabel) - 3)) + '╮', fullAccess ? 'warn' : app.focus === 'transcript' ? 'muted' : 'accent'));
+  const draftTitle = truncate(draftLabel, contentWidth - 4);
+  const borderStyle = fullAccess ? 'warn' : 'border';
+  frame.push(wrapLine(
+    paint('╭─', borderStyle) +
+    paint(draftTitle, fullAccess ? 'warn' : app.focus === 'transcript' ? 'muted' : 'accent') +
+    paint('─'.repeat(Math.max(0, contentWidth - width(draftTitle) - 3)) + '╮', borderStyle)
+  ));
   const inputRow = frame.length;
   for (let n = 0; n < editRows.length; n++) {
     const rowIndex = editStart + n, text = editRows[n];
