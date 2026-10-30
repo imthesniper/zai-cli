@@ -194,6 +194,22 @@ On macOS, these are **Control**, not Command, shortcuts. Mouse reports and OSC 5
 
 Themes: `/theme auto`, `/theme light`, `/theme dark`, and `/theme mono`. Auto uses the terminal background when reported and otherwise inherits its foreground. Explicit themes use their own contrasting foreground/background pair.
 
+## Live tool activity and progress
+
+The native workbench now shows live command status, elapsed time, and available
+numeric output counters beneath each tool call instead of only showing a raw
+result JSON object after expanding the tool. When the upstream ZCode runtime
+provides a tool `description`, it appears as **Purpose (runtime)**. Completed
+tools show reported exit codes and output byte counts where available; click
+the card or use **Ctrl+O** for full output.
+
+These are observed protocol facts, **not fabricated model explanations**.
+Natural-language commentary before and after commands depends on the upstream
+agent producing assistant text. See [progress communication](docs/PROGRESS-UPDATES.md)
+for an optional `AGENTS.md` instruction that encourages that style without
+revealing private internal reasoning. The underlying runtime and model are
+still responsible for actually performing and explaining their work.
+
 ## Sessions, long tasks, and recovery
 
 The native backend monitors quiet turns with session-status and event-history queries rather than automatically stopping a task because no text arrived. A failed health check is shown as **uncertain**. It is not relabeled as a successful task, and a prompt is not automatically replayed.

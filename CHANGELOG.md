@@ -18,6 +18,13 @@
 
 # Changelog
 
+## Unreleased - Live tool activity improvements
+
+- Expose runtime-provided tool purpose labels, elapsed time, progress byte counts, and concise result facts inline during native workbench sessions.
+- Hide raw tool result JSON until explicitly expanded and do not invent an explanation when the upstream agent is silent.
+- Keep private reasoning deltas out of the public transcript; include an optional `AGENTS.md` communication guide for user-visible action and result updates.
+- This is post-v0.2.0 source work, **not** a change to the published v0.2.0 GitHub release.
+
 ## 0.2.0 - Public GitHub preview (2026-10-21)
 
 - Public prerelease package: versioned installer ZIP, application tarball, and downloadable SHA-256 checksum manifest via GitHub Releases, with automatic publication only after the release commit passes the Quality workflow.

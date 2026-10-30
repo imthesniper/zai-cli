@@ -1,5 +1,6 @@
 import { once } from 'node:events';
 import { NativeTurn } from './native-turn.mjs';
+import { runtimeToolDescription, toolProgressLine, toolResultLine } from '../tool-activity.mjs';
 import { resolveRuntime, runtimeEnvironment } from '../runtime.mjs';
 import { ProtocolClient } from '../protocol.mjs';
 import { spawnProcess, killTree } from '../process.mjs';
@@ -169,9 +170,18 @@ export class NativeBackend {
     }
     if (event.type === 'tool.updated' && p.toolCallId) {
       const status = { scheduled: 'queued', started: 'running', result: 'done', error: 'error', progress: 'running' }[p.kind];
-      if (status) this.emit({ type: 'tool', id: p.toolCallId, name: p.toolName, input: p.input, status,
-        output: p.kind === 'result' ? bounded(JSON.stringify(p.result, null, 2)) : p.kind === 'error' ? p.error?.message : p.stdoutTail || p.stderrTail,
-        duration: p.duration });
+      if (status) this.emit({
+        type: 'tool', id: p.toolCallId, name: p.toolName, input: p.input, status,
+        // The upstream protocol may supply an agent-authored tool description.
+        // Forward it as attributed metadata, not as inferred internal reasoning.
+        description: runtimeToolDescription(p.description),
+        startedAt: p.kind === 'started' ? Date.now() : undefined,
+        progressSummary: p.kind === 'progress' ? toolProgressLine(p) : undefined,
+        resultSummary: p.kind === 'result' ? toolResultLine(p.result) : undefined,
+        output: p.kind === 'result' ? bounded(JSON.stringify(p.result, null, 2))
+          : p.kind === 'error' ? p.error?.message : p.stdoutTail || p.stderrTail,
+        duration: p.duration,
+      });
     }
     if (['turn.completed', 'turn.failed'].includes(event.type) && this.matchesActive(event)) this.completeTurn(event);
   }

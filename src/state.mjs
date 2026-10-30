@@ -14,7 +14,13 @@ export class WorkspaceState {
         if (!entry) { entry = { id: event.id, role: event.role || 'assistant', text: '' }; this.entries.push(entry); }
         entry.text = bounded(entry.text + event.text, 120000); this.onRecord(entry, true); break;
       }
-      case 'tool': this.upsert({ ...event, type: undefined, role: 'tool', text: '', output: event.output === undefined ? undefined : bounded(event.output, 24000) }); break;
+      case 'tool': this.upsert({
+        ...event, type: undefined, role: 'tool', text: '',
+        description: event.description === undefined ? undefined : bounded(event.description, 400),
+        progressSummary: event.progressSummary === undefined ? undefined : bounded(event.progressSummary, 180),
+        resultSummary: event.resultSummary === undefined ? undefined : bounded(event.resultSummary, 180),
+        output: event.output === undefined ? undefined : bounded(event.output, 24000),
+      }); break;
       case 'notice': this.upsert({ id: id(), role: event.error ? 'error' : 'notice', text: bounded(event.text, 24000) }); break;
       case 'status': this.phase = event.phase; this.detail = clean(event.detail || ''); break;
       case 'session': this.sessionId = event.id; this.model = event.model || ''; break;

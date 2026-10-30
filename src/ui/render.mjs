@@ -2,6 +2,7 @@ import { basename } from 'node:path';
 import { homedir } from 'node:os';
 import { clean, redact, wrap, wrapWords, truncate, width, graphemes, cellWidth, VERSION } from '../util.mjs';
 import { layoutEditor } from './input.mjs';
+import { toolTargetLabel, toolDisplaySummary } from '../tool-activity.mjs';
 
 // Explicit palettes paint their own background. Auto without a terminal reply inherits
 // the terminal foreground instead of assuming pale text belongs on a dark surface.
@@ -86,16 +87,23 @@ export function transcriptRows(entries, columns, expanded, cache, expandedTools 
   for (const entry of entries) {
     alive.add(entry.id);
     const detail = expanded || expandedTools.has(entry.id);
-    const signature = [columns, detail, entry.role, entry.text, entry.output, entry.name, entry.status, entry.duration, entry.input];
+    const tick = entry.role === 'tool' && entry.status === 'running' ? Math.floor(Date.now() / 1000) : null;
+    const signature = [columns, detail, entry.role, entry.text, entry.output, entry.name, entry.status, entry.duration, entry.input,
+      entry.description, entry.progressSummary, entry.resultSummary, entry.startedAt, tick];
     let saved = cache?.get(entry.id);
     if (!saved || signature.some((v, i) => v !== saved.signature[i])) {
       const rows = [];
       if (entry.role === 'tool') {
         const symbol = { done: '✓', error: '×', running: '●', queued: '·', cancelled: '○' }[entry.status] || '·';
-        const args = entry.input?.path || entry.input?.file_path || entry.input?.command || entry.input?.pattern || entry.input?.query || '';
+        const target = toolTargetLabel(entry.input);
         const duration = Number.isFinite(entry.duration) ? `  ${(entry.duration / 1000).toFixed(1)}s` : '';
-        rows.push({ text: `${detail ? '▾' : '▸'} ${symbol} ${entry.name || 'Tool'}${args ? '  ' + clean(args).replace(/\n/g, ' ') : ''}${duration}`, role: entry.status === 'error' ? 'error' : entry.status === 'done' ? 'muted' : 'accent', toolId: entry.id });
-        if (detail && entry.output) rows.push(...textRows(entry.output, Math.max(1, columns - 3), 'muted').map(row => ({ ...row, text: '   ' + row.text, runs: [{ text: '   ' }, ...(row.runs || [{ text: row.text, role: row.role }])] })));
+        rows.push({ text: `${detail ? '▾' : '▸'} ${symbol} ${entry.name || 'Tool'}${target ? '  ' + target : ''}${duration}`,
+          role: entry.status === 'error' ? 'error' : entry.status === 'done' ? 'muted' : 'accent', toolId: entry.id });
+        const activity = toolDisplaySummary(entry);
+        if (activity.description) rows.push(...textRows('   Purpose (runtime): ' + activity.description, Math.max(1, columns - 3), 'muted'));
+        if (activity.detail) rows.push(...textRows('   ' + activity.detail, Math.max(1, columns - 3),
+          entry.status === 'error' ? 'error' : 'muted'));
+        if (detail && entry.output) rows.push(...textRows('   Details: ' + entry.output, Math.max(1, columns - 3), 'muted'));
       } else {
         rows.push({ text: '' });
         if (entry.role === 'user') rows.push({ text: 'You', role: 'user', bold: true });
