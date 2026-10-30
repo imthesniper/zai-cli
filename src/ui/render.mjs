@@ -243,7 +243,17 @@ export function renderFrame(app, columns, terminalRows, color = true) {
   const scrollLabel = app.scroll || app.historyEntries ? ' · HISTORY  Ctrl+End: live' : '';
   const statusRole = ['uncertain', 'disconnected'].includes(phase) ? 'error' : app.busy ? 'accent' : 'success';
   const modeRole = fullAccess || unconfirmed ? 'warn' : app.demo ? 'muted' : 'success';
-  frame.push(semanticPair(status + elapsed, statusRole, modeLabel + scrollLabel, modeRole));
+  const rightStatus = modeLabel + scrollLabel;
+  const availableStatusWidth = Math.max(1, contentWidth - width(truncate(rightStatus, Math.max(0, contentWidth - 8))) - 2);
+  // Narrow terminals must retain elapsed time rather than truncating the
+  // essential 2m/3h/4d signal behind a long phase description.
+  let leftStatus = status + elapsed;
+  if (app.busy && elapsed && width(leftStatus) > availableStatusWidth) {
+    const timer = formatDuration(Math.max(0, Date.now() - app.turnStarted));
+    leftStatus = `● Working · ${timer}`;
+    if (width(leftStatus) > availableStatusWidth) leftStatus = `● ${timer}`;
+  }
+  frame.push(semanticPair(leftStatus, statusRole, rightStatus, modeRole));
   const selected = app.editor.selection ? ` · ${app.editor.selection[1] - app.editor.selection[0]} selected` : '';
   const draftLabel = ` Prompt${editor.rows.length > 1 ? ' · ' + (editStart + 1) + '-' + Math.min(editStart + editRows.length, editor.rows.length) + '/' + editor.rows.length : ''}${selected} `;
   const draftTitle = truncate(draftLabel, contentWidth - 4);
