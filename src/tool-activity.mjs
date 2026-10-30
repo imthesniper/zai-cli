@@ -23,7 +23,10 @@ export function toolResultLine(result) {
     typeof result.stdout === 'string' ? result.stdout :
     typeof result.output === 'string' ? result.output : null;
   const size = output === null ? undefined : Buffer.byteLength(output, 'utf8');
-  const sizeText = Number.isSafeInteger(size) ? `${size} output bytes` : '';
+  const truncated = isRecord(result.display) && result.display.kind === 'bash_output' &&
+    result.display.truncated === true;
+  const sizeText = Number.isSafeInteger(size)
+    ? `${size} ${truncated ? 'visible output bytes (truncated)' : 'output bytes'}` : '';
   if (codeText && sizeText) return `${codeText} · ${sizeText} (expand to inspect)`;
   if (codeText) return codeText + ' (expand for details)';
   if (sizeText) return sizeText + ' (expand to inspect)';
@@ -37,9 +40,11 @@ export function toolProgressLine(progress) {
       progress.elapsedMs >= 0 && progress.elapsedMs < 30 * 24 * 3600 * 1000) {
     segments.push(`${Math.floor(progress.elapsedMs / 1000)}s elapsed`);
   }
-  const bytes = [progress.outputBytes, progress.stdoutBytes].find(
-    n => Number.isSafeInteger(n) && n >= 0);
-  if (bytes !== undefined) segments.push(`${bytes} output bytes`);
+  if (Number.isSafeInteger(progress.outputBytes) && progress.outputBytes >= 0) {
+    segments.push(`${progress.outputBytes} output bytes`);
+  } else if (Number.isSafeInteger(progress.stdoutBytes) && progress.stdoutBytes >= 0) {
+    segments.push(`${progress.stdoutBytes} stdout bytes`);
+  }
   if (Number.isSafeInteger(progress.stderrBytes) && progress.stderrBytes > 0)
     segments.push(`${progress.stderrBytes} stderr bytes`);
   return segments.length ? segments.join(' · ') : undefined;
