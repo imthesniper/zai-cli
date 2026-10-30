@@ -1,4 +1,5 @@
 import { bounded, clean, isRecord, redact } from './util.mjs';
+import { formatDuration } from './ui/duration.mjs';
 
 /** Describe only facts supplied by the native runtime. This must never invent
  * the model's rationale or expose private reasoning_delta text. */
@@ -64,7 +65,7 @@ export function toolDisplaySummary(entry, now = Date.now()) {
   const since = Number.isFinite(entry.startedAt) && entry.startedAt > 0 &&
     now >= entry.startedAt ? Math.floor((now - entry.startedAt) / 1000) : null;
   const alive = entry.status === 'running';
-  const elapsed = alive && since !== null ? `Running ${since}s` : undefined;
+  const elapsed = alive && since !== null ? `Running ${formatDuration(since * 1000)}` : undefined;
   const line = alive ? [elapsed, progress].filter(Boolean).join(' · ') || 'Running'
     : entry.status === 'queued' ? 'Queued'
     : entry.status === 'done' ? result || 'Completed (expand for results)'

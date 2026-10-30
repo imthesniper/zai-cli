@@ -192,7 +192,7 @@ Pasting does not submit a task or approve a dialog. Up/Down move through prompt 
 
 On macOS, these are **Control**, not Command, shortcuts. Mouse reports and OSC 52 clipboard support depend on your terminal and SSH/tmux configuration. Use `/mouse off` for native terminal selection and `/export` for a reliable transcript file. ZC does not silently change tmux or terminal security settings.
 
-Themes: `/theme auto`, `/theme light`, `/theme dark`, and `/theme mono`. Auto uses the terminal background when reported and otherwise inherits its foreground. Explicit themes use their own contrasting foreground/background pair.
+Themes: enter **`/theme`** to preview `auto`, `dark`, `light`, and `mono` before applying one, or run `/theme dark` directly. Arrow keys and mouse preview; Enter saves; Escape restores the previous theme. Auto inherits your terminal's colors, dark uses a readable graphite palette, light uses paper/ink colors, and mono remains uncolored. The visual theme can change while the model is working. [Design system and contrast tests](docs/DESIGN-SYSTEM.md).
 
 ## Live tool activity and progress
 
@@ -211,6 +211,8 @@ revealing private internal reasoning. The underlying runtime and model are
 still responsible for actually performing and explaining their work.
 
 ## Sessions, long tasks, and recovery
+
+While the model is working, the status timer now uses **seconds, minutes, hours and days** (for example `42s`, `1m 05s`, `1h 02m`, `1d 03h`) rather than an endless seconds counter. Long tool durations share the same compact format. On narrow terminals, the timer takes priority over the long status description.
 
 The native backend monitors quiet turns with session-status and event-history queries rather than automatically stopping a task because no text arrived. A failed health check is shown as **uncertain**. It is not relabeled as a successful task, and a prompt is not automatically replayed.
 

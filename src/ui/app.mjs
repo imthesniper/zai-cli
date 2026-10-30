@@ -2,6 +2,7 @@ import { mkdir, open, realpath } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { Editor, KeyDecoder, indexAtPosition } from './input.mjs';
 import { Screen, renderFrame } from './render.mjs';
+import { performance } from 'node:perf_hooks';
 import { WorkspaceState } from '../state.mjs';
 import { stateDir, saveConfig } from '../config.mjs';
 import { writeJson, readJson, hash, redact, id, abortError, clean, width, takeCells } from '../util.mjs';
@@ -26,7 +27,7 @@ export const COMMANDS = [
   { name: '/diff', description: 'Inspect Git changes, including staged changes' },
   { name: '/compact', description: 'Summarize context while retaining the original session' },
   { name: '/export', description: 'Save the visible conversation as Markdown' },
-  { name: '/theme', description: 'Switch dark, light, or monochrome styling' },
+  { name: '/theme', description: 'Preview and select accessible dark, light, terminal, or mono styling' },
   { name: '/help', description: 'Commands, keyboard shortcuts, and safety boundaries' },
   { name: '/quit', description: 'Save your draft and leave the terminal cleanly' },
 ];
@@ -71,7 +72,9 @@ export class TerminalApp {
     this.draftPath = join(stateDir(), 'drafts', hash(cwd + (demo ? ':demo' : '')).slice(0, 24) + '.json');
     this.workspacePath = join(stateDir(), 'workspaces', hash(cwd).slice(0, 24) + '.json');
     this.persistChain = Promise.resolve();
-    this.color = config.theme !== 'mono' && !Object.hasOwn(process.env, 'NO_COLOR');
+    // Theme switching must not freeze output in mono: NO_COLOR is an environment
+    // boundary, while /theme mono is only a reversible presentation choice.
+    this.color = !Object.hasOwn(process.env, 'NO_COLOR');
   }
   async run() {
     this.done = new Promise(resolve => { this.resolveDone = resolve; });
@@ -166,7 +169,7 @@ export class TerminalApp {
       if (mouse.action === 'press' && mouse.button === 0 && this.paletteView && mouse.y >= this.paletteView.y && mouse.y < this.paletteView.y + this.paletteView.count) {
         const index = this.paletteView.first + mouse.y - this.paletteView.y;
         const second = this.paletteClick?.index === index && Date.now() - this.paletteClick.at < 350;
-        this.palette.index = index; this.paletteClick = { index, at: Date.now() };
+        this.palette.index = index; this.paletteClick = { index, at: Date.now() }; this.previewPaletteTheme();
         if (second) this.handleKey({ key: 'enter' });
       }
       this.schedule(); return;
@@ -353,11 +356,35 @@ export class TerminalApp {
     this.openPalette(models.map(model => ({ name: model.value, description: `${model.label} | ${model.description}`,
       command: `/model ${model.value}`, disabled: model.disabled, disabledReason: model.disabledReason })), 'RUNTIME MODELS');
   }
+  openThemePicker() {
+    const choices = [
+      { name: 'auto', description: 'Terminal native · inherits your colors', command: '/theme auto', theme: 'auto' },
+      { name: 'dark', description: 'Graphite · soft blue accents', command: '/theme dark', theme: 'dark' },
+      { name: 'light', description: 'Paper · ink and deep blue', command: '/theme light', theme: 'light' },
+      { name: 'mono', description: 'Monochrome · no interface colors', command: '/theme mono', theme: 'mono' },
+    ];
+    this.openPalette(choices, 'THEME · LIVE PREVIEW');
+    this.palette.themePicker = true;
+    this.palette.index = Math.max(0, choices.findIndex(choice => choice.theme === this.config.theme));
+    this.themePreview = choices[this.palette.index].theme;
+    this.schedule();
+  }
+  closePalette() {
+    if (this.palette?.themePicker) this.themePreview = undefined;
+    this.palette = null;
+    this.schedule();
+  }
+  previewPaletteTheme() {
+    if (!this.palette?.themePicker) return;
+    const candidate = this.palette.matches[this.palette.index];
+    this.themePreview = candidate?.theme || this.config.theme;
+  }
   handleKey({ key, text, mouse, background }) {
     if (this.closing || this.suspended) return;
     if (background) {
-      this.detectedTheme = background[0] * 0.2126 + background[1] * 0.7152 + background[2] * 0.0722 > 0.5 ? 'light' : 'dark';
-      if (this.config.theme === 'auto') this.screen.invalidate(); this.schedule(); return;
+      // Auto now respects the user's terminal foreground and canvas. An OSC 11
+      // color reply must not clear or flash the screen during an active turn.
+      return;
     }
     if (mouse) { this.handleMouse(mouse); return; }
     if (key === 'interrupt' && !this.permission && !this.palette && this.copySelection()) return;
@@ -380,7 +407,7 @@ export class TerminalApp {
       this.schedule(); return;
     }
     if (key === 'escape') {
-      if (this.palette) this.palette = null;
+      if (this.palette) this.closePalette();
       else if (this.editor.selection || this.transcriptSelection) { this.editor.anchor = null; this.transcriptSelection = null; }
       else if (this.busy) { this.controller?.abort(); if (!this.controller) { this.startupController?.abort(); void this.backend?.dispose(); } }
       this.schedule(); return;
@@ -389,19 +416,20 @@ export class TerminalApp {
       this.openPalette([...this.editor.history].reverse().map((text, i) => ({ name: String(i + 1), description: text.replace(/\n/g, ' ').slice(0, 140), action: () => { this.editor.checkpoint(); this.editor.set(text); this.focus = 'editor'; } })), 'PROMPT HISTORY'); return;
     }
     if (key === 'search' && !this.palette) { this.openSearch(); return; }
-    if (key === 'palette') { this.palette ? this.palette = null : this.openPalette(); this.schedule(); return; }
+    if (key === 'palette') { this.palette ? this.closePalette() : this.openPalette(); this.schedule(); return; }
     if (this.palette) {
       const p = this.palette;
       if (text) p.query += clean(text).replace(/\n/g, ' ').slice(0, 200 - p.query.length);
       if (key === 'backspace') p.query = [...p.query].slice(0, -1).join('');
       if ((text || key === 'backspace') && p.search) { void this.searchArchive(p.query); this.schedule(); return; }
-      if (text || key === 'backspace') { p.matches = p.items.filter(item => (item.name + ' ' + item.description).toLowerCase().includes(p.query.toLowerCase())); p.index = 0; }
+      if (text || key === 'backspace') { p.matches = p.items.filter(item => (item.name + ' ' + item.description).toLowerCase().includes(p.query.toLowerCase())); p.index = 0; this.previewPaletteTheme(); }
       if (key === 'up') p.index = Math.max(0, p.index - 1);
       if (key === 'down') p.index = Math.min(p.matches.length - 1, p.index + 1);
+      if (key === 'up' || key === 'down') this.previewPaletteTheme();
       if (key === 'enter' && p.matches[p.index]) {
         const item = p.matches[p.index];
         if (item.disabled) { this.notify(item.disabledReason || 'The runtime marked this option unavailable.'); return; }
-        this.palette = null; if (item.action) item.action(); else void this.command(item.command || item.name);
+        this.closePalette(); if (item.action) item.action(); else void this.command(item.command || item.name);
       }
       this.schedule(); return;
     }
@@ -423,7 +451,7 @@ export class TerminalApp {
     }
     if (key === 'enter') {
       const value = this.editor.text.trim(); if (!value) return;
-      if (this.busy && !['/help', '/quit', '/export', '/status', '/search', '/mouse'].includes(value.split(/\s/)[0])) { this.notify('A turn is running. Your draft is kept. Esc stops the turn.'); return; }
+      if (this.busy && !['/help', '/quit', '/export', '/status', '/search', '/mouse', '/theme'].includes(value.split(/\s/)[0])) { this.notify('A turn is running. Your draft is kept. Esc stops the turn.'); return; }
       if (value.startsWith('/')) { this.editor.remember(); void this.command(value); }
       else if (!this.backend) this.notify('No runtime is connected. Run /new to retry, or /quit then zc setup.');
       else if (this.backend.needsModel) { void this.command('/model'); }
@@ -437,13 +465,14 @@ export class TerminalApp {
   }
   async work(action) {
     if (this.busy) throw new Error('Stop the current turn first.');
-    this.busy = true; this.turnStarted = Date.now(); this.controller = new AbortController(); this.schedule();
+    this.busy = true; this.turnStarted = Date.now(); this.turnStartedMonotonic = performance.now();
+    this.controller = new AbortController(); this.schedule();
     try { await action(this.controller.signal); }
     finally {
       if (this.controller?.signal.aborted) {
         for (const entry of this.state.entries) if (entry.role === 'tool' && ['running', 'queued'].includes(entry.status)) { entry.status = 'cancelled'; this.state.onRecord?.(entry); }
       }
-      this.busy = false; this.turnStarted = null; this.controller = null;
+      this.busy = false; this.turnStarted = null; this.turnStartedMonotonic = null; this.controller = null;
       if (!['disconnected', 'uncertain'].includes(this.state.phase)) this.emit({ type: 'status', phase: 'idle' });
       await this.journal?.flush();
     }
@@ -474,13 +503,26 @@ export class TerminalApp {
       if (name === '/search') { this.openSearch(value || ''); return; }
       if (name === '/mouse') { if (!['on', 'off'].includes(value)) throw new Error('Use /mouse on or /mouse off.'); this.screen.setMouse(value === 'on'); this.notify(value === 'on' ? 'Mouse editing and scrolling enabled.' : 'Mouse released to the terminal. PgUp/PgDn still scroll the conversation.'); return; }
       if (name === '/export') { await this.export(value); return; }
+      if (name === '/theme') {
+        if (!value) { this.openThemePicker(); return; }
+        if (!['auto', 'dark', 'light', 'mono'].includes(value)) {
+          this.openThemePicker();
+          this.notify('Choose a theme from the live preview. Esc keeps your current theme.');
+          return;
+        }
+        // Persist before applying. A failed write must not leave a misleading
+        // in-memory theme that will disappear on the next launch.
+        await saveConfig({ ...this.config, theme: value });
+        this.config.theme = value;
+        this.themePreview = undefined;
+        this.screen.invalidate();
+        this.schedule();
+        return;
+      }
       if (this.busy) throw new Error('Stop the running turn before changing this setting.');
       if (name === '/login') { await this.signIn(); return; }
       if (name === '/reconnect') { const sessionId = this.state.sessionId; if (!sessionId) throw new Error('No saved session is selected. Use /sessions.'); await this.work(() => this.connect(sessionId)); return; }
-      if (name === '/theme') {
-        if (!['auto', 'dark', 'light', 'mono'].includes(value)) { this.editor.set('/theme '); this.notify('Choose auto, dark, light, or mono.'); return; }
-        this.config.theme = value; await saveConfig(this.config); this.screen.invalidate(); this.schedule(); return;
-      }
+
       if (name === '/new' || name === '/resume') {
         if (name === '/resume' && !value) throw new Error('Use /sessions or /resume followed by an exact session ID.');
         await this.work(() => this.connect(name === '/resume' ? value : undefined)); return;

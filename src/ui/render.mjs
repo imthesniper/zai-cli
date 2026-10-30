@@ -1,16 +1,15 @@
 import { basename } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { homedir } from 'node:os';
 import { clean, redact, wrap, wrapWords, truncate, width, graphemes, cellWidth, VERSION } from '../util.mjs';
 import { layoutEditor } from './input.mjs';
 import { toolTargetLabel, toolDisplaySummary } from '../tool-activity.mjs';
+import { THEMES } from './theme.mjs';
+import { formatDuration } from './duration.mjs';
+export { THEMES } from './theme.mjs';
 
-// Explicit palettes paint their own background. Auto without a terminal reply inherits
-// the terminal foreground instead of assuming pale text belongs on a dark surface.
-export const THEMES = {
-  dark: { background: '48;2;17;22;29', accent: '38;2;125;181;255', text: '38;2;226;232;240', muted: '38;2;158;173;191', faint: '38;2;145;160;179', success: '38;2;117;214;164', warn: '38;2;255;199;111', error: '38;2;255;147;147', code: '38;2;218;227;239', user: '38;2;200;220;255' },
-  light: { background: '48;2;250;250;252', accent: '38;2;25;75;165', text: '38;2;30;39;53', muted: '38;2;78;92;112', faint: '38;2;85;99;119', success: '38;2;21;110;62', warn: '38;2;137;73;9', error: '38;2;174;31;43', code: '38;2;40;53;73', user: '38;2;35;65;115' },
-  auto: { background: '', accent: '39', text: '39', muted: '39', faint: '39', success: '39', warn: '39', error: '39', code: '39', user: '39' },
-};
+// Explicit palettes are WCAG-contrast-tested and owned by ui/theme.mjs.
+// Auto leaves the terminal's own canvas/foreground untouched.
 export function painter(theme = 'auto', color = true, redactContent = true) {
   const t = THEMES[theme] || THEMES.auto;
   return (text, role = 'text', bold = false, selected = false) => {
@@ -96,7 +95,7 @@ export function transcriptRows(entries, columns, expanded, cache, expandedTools 
       if (entry.role === 'tool') {
         const symbol = { done: '✓', error: '×', running: '●', queued: '·', cancelled: '○' }[entry.status] || '·';
         const target = toolTargetLabel(entry.input);
-        const duration = Number.isFinite(entry.duration) ? `  ${(entry.duration / 1000).toFixed(1)}s` : '';
+        const duration = Number.isFinite(entry.duration) ? `  ${formatDuration(entry.duration)}` : '';
         rows.push({ text: `${detail ? '▾' : '▸'} ${symbol} ${entry.name || 'Tool'}${target ? '  ' + target : ''}${duration}`,
           role: entry.status === 'error' ? 'error' : entry.status === 'done' ? 'muted' : 'accent', toolId: entry.id });
         const activity = toolDisplaySummary(entry);
@@ -145,18 +144,30 @@ export function selectionForRow(selection, row, max) {
 }
 export function renderFrame(app, columns, terminalRows, color = true) {
   const cols = Math.max(1, columns - 1), height = Math.max(1, terminalRows);
-  const theme = app.config.theme === 'auto' ? app.detectedTheme || 'auto' : app.config.theme;
+  const theme = app.themePreview || app.config.theme;
   const paint = painter(theme, color), editorPaint = painter(theme, color, false), margin = cols > 160 ? Math.floor((cols - 156) / 2) : Math.min(2, Math.max(0, Math.floor((cols - 24) / 2)));
   const contentWidth = Math.max(4, cols - margin * 2), base = THEMES[theme]?.background;
   const wrapLine = value => color && theme !== 'mono' && base ? `\x1b[${base}m${' '.repeat(margin)}${value}\x1b[${base}m${' '.repeat(Math.max(0, cols - margin - width(value)))}\x1b[0m` : ' '.repeat(margin) + value;
   const line = (text = '', role = 'text', bold = false) => wrapLine(paint(truncate(text, contentWidth), role, bold));
   const pair = (left, right) => { right = truncate(right, Math.max(0, contentWidth - 8)); left = truncate(left, Math.max(1, contentWidth - width(right) - 2)); return left + ' '.repeat(Math.max(1, contentWidth - width(left) - width(right))) + right; };
+  // Mixed semantic roles within a status line avoid coloring the whole
+  // interface blue or treating guarded and full-access as equivalent states.
+  const semanticPair = (left, leftRole, right, rightRole, leftBold = false) => {
+    const tail = truncate(right, Math.max(0, contentWidth - 8));
+    const head = truncate(left, Math.max(1, contentWidth - width(tail) - 2));
+    const space = ' '.repeat(Math.max(1, contentWidth - width(head) - width(tail)));
+    return wrapLine(paint(head, leftRole, leftBold) + paint(space, 'text') + paint(tail, rightRole));
+  };
   if (height < 14 || columns < 36) {
     const small = ['ZC', 'Resize to at least 36 x 14.', 'Ctrl+C twice to exit.'].slice(0, height).map(s => paint(truncate(s, cols), 'text'));
     while (small.length < height) small.push(''); return { lines: small, cursor: null };
   }
   const path = app.cwd.startsWith(homedir()) ? '~' + app.cwd.slice(homedir().length) : app.cwd;
-  const frame = [line(pair(`ZC  ${basename(app.cwd)}${app.branch ? '  [' + app.branch + ']' : ''}`, `v${VERSION}`), 'accent', true), line(path, 'muted'), line('─'.repeat(contentWidth), 'faint')];
+  const frame = [
+    semanticPair(`ZC  ${basename(app.cwd)}${app.branch ? '  [' + app.branch + ']' : ''}`, 'text', `v${VERSION}`, 'faint', true),
+    line(path, 'muted'),
+    line('─'.repeat(contentWidth), 'border'),
+  ];
   const editor = layoutEditor(app.editor, contentWidth - 4), maxEdit = Math.min(10, Math.max(1, Math.floor(height / 3) - 1));
   app.editorStart = Math.max(0, Math.min(app.editorStart || 0, Math.max(0, editor.rows.length - maxEdit)));
   if (editor.cursor.row < app.editorStart) app.editorStart = editor.cursor.row;
@@ -192,9 +203,27 @@ export function renderFrame(app, columns, terminalRows, color = true) {
       { text: `${p.allow ? '  Deny   [ ' + allowLabel + ' ]' : '[ Deny ]   ' + allowLabel}   ←/→ choose · Enter confirm · Esc deny`, role: 'warn', bold: true }];
     app.permissionView = { x: margin, y: frame.length + Math.min(body.length, viewportHeight) - 1, allowX: margin + 11 };
   } else if (app.palette) {
-    const selected = Math.min(app.palette.index, Math.max(0, app.palette.matches.length - 1)), limit = Math.max(1, viewportHeight - 4), first = Math.max(0, selected - limit + 1);
-    body = [{ text: app.palette.title || 'COMMANDS', role: 'accent', bold: true }, { text: `› ${app.palette.query || 'Type to filter'}`, role: app.palette.query ? 'text' : 'muted' }, { text: '' },
-      ...app.palette.matches.slice(first, first + limit).map((item, i) => ({ text: `${first + i === selected ? '›' : ' '} ${item.name}  ${item.description || ''}`, role: item.disabled ? 'muted' : first + i === selected ? 'accent' : 'text', bold: first + i === selected })), { text: '↑/↓ select · Enter open · Esc close', role: 'muted' }];
+    const samples = app.palette.themePicker && viewportHeight >= 12 ? [
+      { text: '' },
+      { text: 'Theme preview', role: 'muted', bold: true },
+      { text: 'Primary text  ·  Secondary detail', runs: [
+        { text: 'Primary text', role: 'text' }, { text: '  ·  Secondary detail', role: 'muted' },
+      ] },
+      { text: '✓ Completed    ● Working    ! Attention', runs: [
+        { text: '✓ Completed', role: 'success' }, { text: '    ● Working', role: 'accent' },
+        { text: '    ! Attention', role: 'warn' },
+      ] },
+    ] : [];
+    const selected = Math.min(app.palette.index, Math.max(0, app.palette.matches.length - 1));
+    const limit = Math.max(1, viewportHeight - 4 - samples.length);
+    const first = Math.max(0, selected - limit + 1);
+    body = [{ text: app.palette.title || 'COMMANDS', role: 'accent', bold: true },
+      { text: `› ${app.palette.query || 'Type to filter'}`, role: app.palette.query ? 'text' : 'muted' }, { text: '' },
+      ...app.palette.matches.slice(first, first + limit).map((item, i) => ({
+        text: `${first + i === selected ? '›' : ' '} ${item.name}  ${item.description || ''}`,
+        role: item.disabled ? 'muted' : first + i === selected ? 'accent' : 'text', bold: first + i === selected,
+      })), ...samples,
+      { text: app.palette.themePicker ? '↑/↓ preview · Enter apply · Esc cancel' : '↑/↓ select · Enter open · Esc close', role: 'muted' }];
     app.paletteView = { x: margin, y: frame.length + 3, first, count: Math.min(limit, app.palette.matches.length - first) };
     cursor = { row: 5, column: margin + 3 + Math.min(width(app.palette.query), contentWidth - 4) };
   }
@@ -211,13 +240,37 @@ export function renderFrame(app, columns, terminalRows, color = true) {
   const mode = app.state.mode || app.config.mode, fullAccess = app.config.backend === 'native' && !app.demo && mode === 'yolo';
   const unconfirmed = mode === 'unknown', phase = app.state.phase;
   const status = ['disconnected', 'uncertain'].includes(phase) ? '! ' + (app.state.detail || 'Connection needs attention') : app.busy ? '● ' + (app.state.detail || 'Working') : '○ Ready';
-  const elapsed = app.busy && app.turnStarted ? ` · ${Math.floor((Date.now() - app.turnStarted) / 1000)}s` : '';
+  // performance.now is monotonic across system clock changes. Retain a
+  // wall-clock fallback for older mock frames and presentation snapshots.
+  const elapsedMs = app.busy && app.turnStarted
+    ? Math.max(0, Number.isFinite(app.turnStartedMonotonic)
+      ? performance.now() - app.turnStartedMonotonic : Date.now() - app.turnStarted)
+    : null;
+  const elapsed = elapsedMs === null ? '' : ` · ${formatDuration(elapsedMs)}`;
   const modeLabel = app.demo ? 'OFFLINE DEMO' : fullAccess ? 'YOLO / FULL ACCESS' : unconfirmed ? 'MODE UNCONFIRMED' : app.config.backend === 'native-stream' ? 'guarded, no approvals' : app.state.runtimeMode === 'guarded' ? 'GUARDED' : String(mode).toUpperCase();
   const scrollLabel = app.scroll || app.historyEntries ? ' · HISTORY  Ctrl+End: live' : '';
-  frame.push(line(pair(status + elapsed, modeLabel + scrollLabel), fullAccess || unconfirmed || ['uncertain', 'disconnected'].includes(phase) ? 'warn' : app.busy ? 'accent' : 'muted'));
+  const statusRole = ['uncertain', 'disconnected'].includes(phase) ? 'error' : app.busy ? 'accent' : 'success';
+  const modeRole = fullAccess || unconfirmed ? 'warn' : app.demo ? 'muted' : 'success';
+  const rightStatus = modeLabel + scrollLabel;
+  const availableStatusWidth = Math.max(1, contentWidth - width(truncate(rightStatus, Math.max(0, contentWidth - 8))) - 2);
+  // Narrow terminals must retain elapsed time rather than truncating the
+  // essential 2m/3h/4d signal behind a long phase description.
+  let leftStatus = status + elapsed;
+  if (app.busy && elapsed && width(leftStatus) > availableStatusWidth) {
+    const timer = formatDuration(elapsedMs);
+    leftStatus = `● Working · ${timer}`;
+    if (width(leftStatus) > availableStatusWidth) leftStatus = `● ${timer}`;
+  }
+  frame.push(semanticPair(leftStatus, statusRole, rightStatus, modeRole));
   const selected = app.editor.selection ? ` · ${app.editor.selection[1] - app.editor.selection[0]} selected` : '';
   const draftLabel = ` Prompt${editor.rows.length > 1 ? ' · ' + (editStart + 1) + '-' + Math.min(editStart + editRows.length, editor.rows.length) + '/' + editor.rows.length : ''}${selected} `;
-  frame.push(line('╭─' + truncate(draftLabel, contentWidth - 4) + '─'.repeat(Math.max(0, contentWidth - width(draftLabel) - 3)) + '╮', fullAccess ? 'warn' : app.focus === 'transcript' ? 'muted' : 'accent'));
+  const draftTitle = truncate(draftLabel, contentWidth - 4);
+  const borderStyle = fullAccess ? 'warn' : 'border';
+  frame.push(wrapLine(
+    paint('╭─', borderStyle) +
+    paint(draftTitle, fullAccess ? 'warn' : app.focus === 'transcript' ? 'muted' : 'accent') +
+    paint('─'.repeat(Math.max(0, contentWidth - width(draftTitle) - 3)) + '╮', borderStyle)
+  ));
   const inputRow = frame.length;
   for (let n = 0; n < editRows.length; n++) {
     const rowIndex = editStart + n, text = editRows[n];
@@ -227,9 +280,9 @@ export function renderFrame(app, columns, terminalRows, color = true) {
       if (rowIndex >= positions[a].row && rowIndex <= positions[b].row) selection = [rowIndex === positions[a].row ? positions[a].column : 0, rowIndex === positions[b].row ? positions[b].column : width(text) + 1];
     }
     const value = !app.editor.text ? paint(truncate('Ask about your project, or type /help', contentWidth - 4), 'muted') : paintRow({ text }, contentWidth - 4, editorPaint, selection, false);
-    frame.push(wrapLine(paint('│ ', 'faint') + value + paint(' '.repeat(Math.max(0, contentWidth - 3 - width(value))) + '│', 'faint')));
+    frame.push(wrapLine(paint('│ ', 'border') + value + paint(' '.repeat(Math.max(0, contentWidth - 3 - width(value))) + '│', 'border')));
   }
-  frame.push(line('╰' + '─'.repeat(contentWidth - 2) + '╯', 'faint'));
+  frame.push(line('╰' + '─'.repeat(contentWidth - 2) + '╯', 'border'));
   const hints = contentWidth > 100 ? 'Enter send · Alt+Enter newline · Ctrl+A select all · Ctrl+R history · Ctrl+P commands' : 'Enter send · Ctrl+A select all · Ctrl+P commands';
   frame.push(line(pair(hints, app.busy ? 'Esc stop' : 'Wheel scroll'), 'muted'));
   const usage = app.state.usage?.total_tokens ?? app.state.usage?.totalTokens;
