@@ -382,8 +382,9 @@ export class TerminalApp {
   handleKey({ key, text, mouse, background }) {
     if (this.closing || this.suspended) return;
     if (background) {
-      this.detectedTheme = background[0] * 0.2126 + background[1] * 0.7152 + background[2] * 0.0722 > 0.5 ? 'light' : 'dark';
-      if (this.config.theme === 'auto') this.screen.invalidate(); this.schedule(); return;
+      // Auto now respects the user's terminal foreground and canvas. An OSC 11
+      // color reply must not clear or flash the screen during an active turn.
+      return;
     }
     if (mouse) { this.handleMouse(mouse); return; }
     if (key === 'interrupt' && !this.permission && !this.palette && this.copySelection()) return;
