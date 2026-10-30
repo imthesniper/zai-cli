@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { homedir } from 'node:os';
 import { clean, redact, wrap, wrapWords, truncate, width, graphemes, cellWidth, VERSION } from '../util.mjs';
 import { layoutEditor } from './input.mjs';
@@ -238,7 +239,13 @@ export function renderFrame(app, columns, terminalRows, color = true) {
   const mode = app.state.mode || app.config.mode, fullAccess = app.config.backend === 'native' && !app.demo && mode === 'yolo';
   const unconfirmed = mode === 'unknown', phase = app.state.phase;
   const status = ['disconnected', 'uncertain'].includes(phase) ? '! ' + (app.state.detail || 'Connection needs attention') : app.busy ? '● ' + (app.state.detail || 'Working') : '○ Ready';
-  const elapsed = app.busy && app.turnStarted ? ` · ${formatDuration(Math.max(0, Date.now() - app.turnStarted))}` : '';
+  // performance.now is monotonic across system clock changes. Retain a
+  // wall-clock fallback for older mock frames and presentation snapshots.
+  const elapsedMs = app.busy && app.turnStarted
+    ? Math.max(0, Number.isFinite(app.turnStartedMonotonic)
+      ? performance.now() - app.turnStartedMonotonic : Date.now() - app.turnStarted)
+    : null;
+  const elapsed = elapsedMs === null ? '' : ` · ${formatDuration(elapsedMs)}`;
   const modeLabel = app.demo ? 'OFFLINE DEMO' : fullAccess ? 'YOLO / FULL ACCESS' : unconfirmed ? 'MODE UNCONFIRMED' : app.config.backend === 'native-stream' ? 'guarded, no approvals' : app.state.runtimeMode === 'guarded' ? 'GUARDED' : String(mode).toUpperCase();
   const scrollLabel = app.scroll || app.historyEntries ? ' · HISTORY  Ctrl+End: live' : '';
   const statusRole = ['uncertain', 'disconnected'].includes(phase) ? 'error' : app.busy ? 'accent' : 'success';
@@ -249,7 +256,7 @@ export function renderFrame(app, columns, terminalRows, color = true) {
   // essential 2m/3h/4d signal behind a long phase description.
   let leftStatus = status + elapsed;
   if (app.busy && elapsed && width(leftStatus) > availableStatusWidth) {
-    const timer = formatDuration(Math.max(0, Date.now() - app.turnStarted));
+    const timer = formatDuration(elapsedMs);
     leftStatus = `● Working · ${timer}`;
     if (width(leftStatus) > availableStatusWidth) leftStatus = `● ${timer}`;
   }
