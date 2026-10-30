@@ -38,8 +38,11 @@ test('result summaries expose known status and output byte count, not raw potent
   assert.equal(toolResultLine(null),'Result received (expand for details)');
   assert.doesNotMatch(toolResultLine(result), /very-secret/);
   assert.equal(toolProgressLine({elapsedMs:2100,stdoutBytes:101,stderrBytes:4}),
-    '2s elapsed · 101 output bytes · 4 stderr bytes');
+    '2s elapsed · 101 stdout bytes · 4 stderr bytes');
   assert.equal(toolProgressLine({}),undefined);
+  assert.equal(toolProgressLine({elapsedMs:1010,outputBytes:50,stdoutBytes:30}), '1s elapsed · 50 output bytes');
+  assert.equal(toolResultLine({display:{kind:'bash_output',output:'x',truncated:true}}),
+    '1 visible output bytes (truncated) (expand to inspect)');
 });
 
 test('upstream event metadata survives into ZC and collapsed tool rows stay readable', () => {
@@ -60,7 +63,7 @@ test('upstream event metadata survives into ZC and collapsed tool rows stay read
     stdoutBytes:200,stdoutTail:'private-output-please-expand'});
   let entry=state.entries.find(x=>x.id==='tool-1');
   assert.equal(entry.description,'Run the parser regression tests');
-  assert.equal(entry.progressSummary,'5s elapsed · 200 output bytes');
+  assert.equal(entry.progressSummary,'5s elapsed · 200 stdout bytes');
   assert.equal(entry.status,'running');
   assert.equal(entry.input.command,'node --test test/parser.test.mjs');
   let rows=transcriptRows(state.entries,100,false,new Map()).map(x=>x.text).join('\n');
