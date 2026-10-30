@@ -201,9 +201,27 @@ export function renderFrame(app, columns, terminalRows, color = true) {
       { text: `${p.allow ? '  Deny   [ ' + allowLabel + ' ]' : '[ Deny ]   ' + allowLabel}   ←/→ choose · Enter confirm · Esc deny`, role: 'warn', bold: true }];
     app.permissionView = { x: margin, y: frame.length + Math.min(body.length, viewportHeight) - 1, allowX: margin + 11 };
   } else if (app.palette) {
-    const selected = Math.min(app.palette.index, Math.max(0, app.palette.matches.length - 1)), limit = Math.max(1, viewportHeight - 4), first = Math.max(0, selected - limit + 1);
-    body = [{ text: app.palette.title || 'COMMANDS', role: 'accent', bold: true }, { text: `› ${app.palette.query || 'Type to filter'}`, role: app.palette.query ? 'text' : 'muted' }, { text: '' },
-      ...app.palette.matches.slice(first, first + limit).map((item, i) => ({ text: `${first + i === selected ? '›' : ' '} ${item.name}  ${item.description || ''}`, role: item.disabled ? 'muted' : first + i === selected ? 'accent' : 'text', bold: first + i === selected })), { text: '↑/↓ select · Enter open · Esc close', role: 'muted' }];
+    const samples = app.palette.themePicker && viewportHeight >= 12 ? [
+      { text: '' },
+      { text: 'Theme preview', role: 'muted', bold: true },
+      { text: 'Primary text  ·  Secondary detail', runs: [
+        { text: 'Primary text', role: 'text' }, { text: '  ·  Secondary detail', role: 'muted' },
+      ] },
+      { text: '✓ Completed    ● Working    ! Attention', runs: [
+        { text: '✓ Completed', role: 'success' }, { text: '    ● Working', role: 'accent' },
+        { text: '    ! Attention', role: 'warn' },
+      ] },
+    ] : [];
+    const selected = Math.min(app.palette.index, Math.max(0, app.palette.matches.length - 1));
+    const limit = Math.max(1, viewportHeight - 4 - samples.length);
+    const first = Math.max(0, selected - limit + 1);
+    body = [{ text: app.palette.title || 'COMMANDS', role: 'accent', bold: true },
+      { text: `› ${app.palette.query || 'Type to filter'}`, role: app.palette.query ? 'text' : 'muted' }, { text: '' },
+      ...app.palette.matches.slice(first, first + limit).map((item, i) => ({
+        text: `${first + i === selected ? '›' : ' '} ${item.name}  ${item.description || ''}`,
+        role: item.disabled ? 'muted' : first + i === selected ? 'accent' : 'text', bold: first + i === selected,
+      })), ...samples,
+      { text: app.palette.themePicker ? '↑/↓ preview · Enter apply · Esc cancel' : '↑/↓ select · Enter open · Esc close', role: 'muted' }];
     app.paletteView = { x: margin, y: frame.length + 3, first, count: Math.min(limit, app.palette.matches.length - first) };
     cursor = { row: 5, column: margin + 3 + Math.min(width(app.palette.query), contentWidth - 4) };
   }
