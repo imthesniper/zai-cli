@@ -20,7 +20,7 @@ export const THEME_COLORS = Object.freeze({
     text: '#1B2533',
     muted: '#586475',
     faint: '#647387',
-    border: '#7A8695',
+    border: '#627183',
     accent: '#185EA4',
     user: '#294A6A',
     code: '#384E64',
