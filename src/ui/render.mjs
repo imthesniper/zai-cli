@@ -3,15 +3,12 @@ import { homedir } from 'node:os';
 import { clean, redact, wrap, wrapWords, truncate, width, graphemes, cellWidth, VERSION } from '../util.mjs';
 import { layoutEditor } from './input.mjs';
 import { toolTargetLabel, toolDisplaySummary } from '../tool-activity.mjs';
+import { THEMES } from './theme.mjs';
+import { formatDuration } from './duration.mjs';
+export { THEMES } from './theme.mjs';
 
-// Explicit palettes paint their own background. Auto without a terminal reply inherits
-// the terminal foreground instead of assuming pale text belongs on a dark surface.
-export const THEMES = {
-  dark: { background: '48;2;17;22;29', accent: '38;2;125;181;255', text: '38;2;226;232;240', muted: '38;2;158;173;191', faint: '38;2;145;160;179', success: '38;2;117;214;164', warn: '38;2;255;199;111', error: '38;2;255;147;147', code: '38;2;218;227;239', user: '38;2;200;220;255' },
-  light: { background: '48;2;250;250;252', accent: '38;2;25;75;165', text: '38;2;30;39;53', muted: '38;2;78;92;112', faint: '38;2;85;99;119', success: '38;2;21;110;62', warn: '38;2;137;73;9', error: '38;2;174;31;43', code: '38;2;40;53;73', user: '38;2;35;65;115' },
-  auto: { background: '', accent: '39', text: '39', muted: '39', faint: '39', success: '39', warn: '39', error: '39', code: '39', user: '39' },
-};
-export function painter(theme = 'auto', color = true, redactContent = true) {
+// Explicit palettes are WCAG-contrast-tested and owned by ui/theme.mjs.
+// Auto leaves the terminal's own canvas/foreground untouched.\nexport function painter(theme = 'auto', color = true, redactContent = true) {
   const t = THEMES[theme] || THEMES.auto;
   return (text, role = 'text', bold = false, selected = false) => {
     const safe = redactContent ? redact(text) : clean(text);
@@ -96,7 +93,7 @@ export function transcriptRows(entries, columns, expanded, cache, expandedTools 
       if (entry.role === 'tool') {
         const symbol = { done: '✓', error: '×', running: '●', queued: '·', cancelled: '○' }[entry.status] || '·';
         const target = toolTargetLabel(entry.input);
-        const duration = Number.isFinite(entry.duration) ? `  ${(entry.duration / 1000).toFixed(1)}s` : '';
+        const duration = Number.isFinite(entry.duration) ? `  ${formatDuration(entry.duration)}` : '';
         rows.push({ text: `${detail ? '▾' : '▸'} ${symbol} ${entry.name || 'Tool'}${target ? '  ' + target : ''}${duration}`,
           role: entry.status === 'error' ? 'error' : entry.status === 'done' ? 'muted' : 'accent', toolId: entry.id });
         const activity = toolDisplaySummary(entry);
@@ -145,7 +142,7 @@ export function selectionForRow(selection, row, max) {
 }
 export function renderFrame(app, columns, terminalRows, color = true) {
   const cols = Math.max(1, columns - 1), height = Math.max(1, terminalRows);
-  const theme = app.config.theme === 'auto' ? app.detectedTheme || 'auto' : app.config.theme;
+  const theme = app.themePreview || app.config.theme;
   const paint = painter(theme, color), editorPaint = painter(theme, color, false), margin = cols > 160 ? Math.floor((cols - 156) / 2) : Math.min(2, Math.max(0, Math.floor((cols - 24) / 2)));
   const contentWidth = Math.max(4, cols - margin * 2), base = THEMES[theme]?.background;
   const wrapLine = value => color && theme !== 'mono' && base ? `\x1b[${base}m${' '.repeat(margin)}${value}\x1b[${base}m${' '.repeat(Math.max(0, cols - margin - width(value)))}\x1b[0m` : ' '.repeat(margin) + value;
@@ -156,7 +153,7 @@ export function renderFrame(app, columns, terminalRows, color = true) {
     while (small.length < height) small.push(''); return { lines: small, cursor: null };
   }
   const path = app.cwd.startsWith(homedir()) ? '~' + app.cwd.slice(homedir().length) : app.cwd;
-  const frame = [line(pair(`ZC  ${basename(app.cwd)}${app.branch ? '  [' + app.branch + ']' : ''}`, `v${VERSION}`), 'accent', true), line(path, 'muted'), line('─'.repeat(contentWidth), 'faint')];
+  const frame = [line(pair(`ZC  ${basename(app.cwd)}${app.branch ? '  [' + app.branch + ']' : ''}`, `v${VERSION}`), 'accent', true), line(path, 'muted'), line('─'.repeat(contentWidth), 'border')];
   const editor = layoutEditor(app.editor, contentWidth - 4), maxEdit = Math.min(10, Math.max(1, Math.floor(height / 3) - 1));
   app.editorStart = Math.max(0, Math.min(app.editorStart || 0, Math.max(0, editor.rows.length - maxEdit)));
   if (editor.cursor.row < app.editorStart) app.editorStart = editor.cursor.row;
@@ -211,7 +208,7 @@ export function renderFrame(app, columns, terminalRows, color = true) {
   const mode = app.state.mode || app.config.mode, fullAccess = app.config.backend === 'native' && !app.demo && mode === 'yolo';
   const unconfirmed = mode === 'unknown', phase = app.state.phase;
   const status = ['disconnected', 'uncertain'].includes(phase) ? '! ' + (app.state.detail || 'Connection needs attention') : app.busy ? '● ' + (app.state.detail || 'Working') : '○ Ready';
-  const elapsed = app.busy && app.turnStarted ? ` · ${Math.floor((Date.now() - app.turnStarted) / 1000)}s` : '';
+  const elapsed = app.busy && app.turnStarted ? ` · ${formatDuration(Math.max(0, Date.now() - app.turnStarted))}` : '';
   const modeLabel = app.demo ? 'OFFLINE DEMO' : fullAccess ? 'YOLO / FULL ACCESS' : unconfirmed ? 'MODE UNCONFIRMED' : app.config.backend === 'native-stream' ? 'guarded, no approvals' : app.state.runtimeMode === 'guarded' ? 'GUARDED' : String(mode).toUpperCase();
   const scrollLabel = app.scroll || app.historyEntries ? ' · HISTORY  Ctrl+End: live' : '';
   frame.push(line(pair(status + elapsed, modeLabel + scrollLabel), fullAccess || unconfirmed || ['uncertain', 'disconnected'].includes(phase) ? 'warn' : app.busy ? 'accent' : 'muted'));
@@ -227,9 +224,9 @@ export function renderFrame(app, columns, terminalRows, color = true) {
       if (rowIndex >= positions[a].row && rowIndex <= positions[b].row) selection = [rowIndex === positions[a].row ? positions[a].column : 0, rowIndex === positions[b].row ? positions[b].column : width(text) + 1];
     }
     const value = !app.editor.text ? paint(truncate('Ask about your project, or type /help', contentWidth - 4), 'muted') : paintRow({ text }, contentWidth - 4, editorPaint, selection, false);
-    frame.push(wrapLine(paint('│ ', 'faint') + value + paint(' '.repeat(Math.max(0, contentWidth - 3 - width(value))) + '│', 'faint')));
+    frame.push(wrapLine(paint('│ ', 'border') + value + paint(' '.repeat(Math.max(0, contentWidth - 3 - width(value))) + '│', 'border')));
   }
-  frame.push(line('╰' + '─'.repeat(contentWidth - 2) + '╯', 'faint'));
+  frame.push(line('╰' + '─'.repeat(contentWidth - 2) + '╯', 'border'));
   const hints = contentWidth > 100 ? 'Enter send · Alt+Enter newline · Ctrl+A select all · Ctrl+R history · Ctrl+P commands' : 'Enter send · Ctrl+A select all · Ctrl+P commands';
   frame.push(line(pair(hints, app.busy ? 'Esc stop' : 'Wheel scroll'), 'muted'));
   const usage = app.state.usage?.total_tokens ?? app.state.usage?.totalTokens;
