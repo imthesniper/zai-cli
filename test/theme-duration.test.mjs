@@ -41,7 +41,7 @@ test('dark and light theme semantics meet text readability thresholds', () => {
       const ratio=contrastRatio(pal[role],pal.background);
       assert.ok(ratio>=4.5,`${name} ${role} contrast: ${ratio}`);
     }
-    assert.ok(contrastRatio(pal.border,pal.background)>=3,`${name} border visibility`);
+    assert.ok(contrastRatio(pal.border,pal.background)>=4.5,`${name} border visibility`);
     assert.ok(/^48;2;/.test(THEMES[name].background));
   }
 });
