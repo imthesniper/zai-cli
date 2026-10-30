@@ -2,6 +2,7 @@ import { mkdir, open, realpath } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { Editor, KeyDecoder, indexAtPosition } from './input.mjs';
 import { Screen, renderFrame } from './render.mjs';
+import { performance } from 'node:perf_hooks';
 import { WorkspaceState } from '../state.mjs';
 import { stateDir, saveConfig } from '../config.mjs';
 import { writeJson, readJson, hash, redact, id, abortError, clean, width, takeCells } from '../util.mjs';
@@ -463,13 +464,14 @@ export class TerminalApp {
   }
   async work(action) {
     if (this.busy) throw new Error('Stop the current turn first.');
-    this.busy = true; this.turnStarted = Date.now(); this.controller = new AbortController(); this.schedule();
+    this.busy = true; this.turnStarted = Date.now(); this.turnStartedMonotonic = performance.now();
+    this.controller = new AbortController(); this.schedule();
     try { await action(this.controller.signal); }
     finally {
       if (this.controller?.signal.aborted) {
         for (const entry of this.state.entries) if (entry.role === 'tool' && ['running', 'queued'].includes(entry.status)) { entry.status = 'cancelled'; this.state.onRecord?.(entry); }
       }
-      this.busy = false; this.turnStarted = null; this.controller = null;
+      this.busy = false; this.turnStarted = null; this.turnStartedMonotonic = null; this.controller = null;
       if (!['disconnected', 'uncertain'].includes(this.state.phase)) this.emit({ type: 'status', phase: 'idle' });
       await this.journal?.flush();
     }
