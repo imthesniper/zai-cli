@@ -22,7 +22,7 @@ test('elapsed time transitions cleanly through seconds, minutes, hours and days'
   ];
   for (const [ms,label] of fixtures) assert.equal(formatDuration(ms),label,`duration ${ms}`);
   for(const value of [-1,Number.NaN,Infinity,-Infinity,undefined,null,'3600']) {
-    assert.equal(formatDuration(value),'—');
+    assert.equal(formatDuration(value),'n/a');
   }
 });
 test('live tool durations share the same human units', () => {
