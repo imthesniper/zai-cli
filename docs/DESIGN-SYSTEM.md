@@ -77,7 +77,9 @@ tool duration. It uses up to two time units for stable compact width:
 | 97,200 seconds | `1d 03h` |
 
 On a narrow terminal, ZC shortens the *status description*, not the elapsed
-time. Time units do **not** measure how close a model is to completion, and
+time. Active-turn elapsed time comes from a monotonic process clock, so
+adjusting the computer's wall-clock time does not make the timer jump.
+Time units do **not** measure how close a model is to completion, and
 they do not imply that a quiet or disconnected runtime is healthy. Use
 `/status` to inspect uncertain tasks and Escape for an explicit stop.
 
