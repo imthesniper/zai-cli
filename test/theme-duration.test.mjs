@@ -74,6 +74,17 @@ test('status timer reports human-sized durations without clipping the 80-column 
     for(const line of frame.lines) assert.ok(width(line)<=79,`overflow: ${clean(line)}`);
   }
 });
+test('running status uses monotonic elapsed time when the wall clock is disturbed', () => {
+  const a=createApp('light');
+  a.busy=true;
+  a.state.apply({type:'status',phase:'working',detail:'Waiting for the model'});
+  a.turnStarted=Date.now()-2000;
+  a.turnStartedMonotonic=performance.now()-3720000;
+  const frame=renderFrame(a,80,24,true);
+  const visible=frame.lines.map(clean).join(' ');
+  assert.ok(visible.includes('1h 02m'));
+  assert.ok(!visible.includes('Waiting for the model · 2s'));
+});
 test('semantic hierarchy survives narrow and wide terminals across every theme', () => {
   for(const theme of ['auto','dark','light','mono']) for(const [cols,rows] of [[36,14],[60,16],[80,24],[120,32],[180,46]]) {
     const a=createApp(theme);
