@@ -126,6 +126,34 @@ test('theme picker previews before commit and Escape preserves the original them
   assert.equal(a.palette,null);
   assert.ok(!renderFrame(a,80,24,true).lines.join('\n').includes('\x1b[48;2'));
 });
+test('terminal background replies never flash the screen when auto inherits the palette', () => {
+  const a=createApp('auto');
+  let invalidations=0, renders=0;
+  a.screen.invalidate=()=>{ invalidations++; };
+  a.schedule=()=>{ renders++; };
+  a.handleKey({background:[0.2,0.2,0.2]});
+  assert.equal(invalidations,0);
+  assert.equal(renders,0);
+});
+test('an active model turn can preview themes by mouse without changing permissions or saving', async () => {
+  const a=createApp('dark');
+  a.busy=true;
+  a.turnStarted=Date.now()-65000;
+  await a.command('/theme');
+  const view=renderFrame(a,100,30,true);
+  assert.equal(view.lines.length,30);
+  assert.equal(a.palette.themePicker,true);
+  const area=a.paletteView;
+  a.handleMouse({action:'press',button:0,x:area.x+4,y:area.y+2});
+  assert.equal(a.themePreview,'light');
+  assert.equal(a.config.theme,'dark');
+  assert.equal(a.busy,true);
+  assert.ok(renderFrame(a,100,30,true).lines.join('').includes(THEMES.light.background));
+  a.handleKey({key:'escape'});
+  assert.equal(a.themePreview,undefined);
+  assert.equal(a.config.theme,'dark');
+  assert.equal(a.busy,true);
+});
 test('switching out of mono restores color without restarting and direct /theme persists', async t => {
   const folder=await mkdtemp(join(tmpdir(),'zc-theme-fixture-'));
   const original=process.env.ZC_HOME;
