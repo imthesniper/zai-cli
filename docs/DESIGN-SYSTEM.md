@@ -42,8 +42,9 @@ do not change model execution or permissions.
 | Error | `#F0ACAC` | `#A52C3E` |
 
 Each functional text color has at least **4.5:1** relative luminance contrast
-against its explicit theme background in automated tests. Borders meet
-**3:1**. This checks palette ratios, not every possible terminal's font
+against its explicit theme background in automated tests. Even structural
+borders meet **4.5:1**, so they remain visible at normal text size. This checks
+palette ratios, not every possible terminal's font
 rendering, display quality or actual visual accessibility.
 
 **Auto** respects the terminal's own foreground and background. It uses
